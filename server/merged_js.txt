@@ -1,0 +1,259 @@
+
+===== File: /controllers/authController.js =====
+const User = require('../models/User');
+const generateToken = require('../utils/generateToken');
+
+exports.signup = async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) return res.status(400).json({ error: 'User already exists' });
+
+    const user = await User.create({ name, email, password });
+
+    res.status(201).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      token: generateToken(user._id)
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.login = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user || !(await user.matchPassword(password))) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    res.json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      token: generateToken(user._id)
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+===== File: /controllers/contentController.js =====
+const axios = require('axios');
+const Content = require('../models/Content');
+
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+
+exports.simplifyContent = async (req, res) => {
+  try {
+    const { topic, level = 'easy' } = req.body;
+
+    const content = await Content.findOne({ topic });
+    if (!content) {
+      return res.status(404).json({ error: 'Content not found' });
+    }
+
+    const prompt = `Simplify the following educational text for a ${level} understanding:\n\n${content.originalText}`;
+
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: 'mistral/mistral-7b-instruct:free',
+        messages: [
+          { role: 'system', content: 'You are a helpful tutor who simplifies text.' },
+          { role: 'user', content: prompt }
+        ]
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const simplifiedText = response.data.choices[0].message.content;
+
+    // Add simplified version to array
+    content.simplifiedVersions.push({
+      level,
+      text: simplifiedText
+    });
+
+    await content.save();
+
+    res.json({ simplifiedText });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+===== File: /controllers/qaController.js =====
+
+
+===== File: /models/Content.js =====
+const mongoose = require('mongoose');
+
+const simplifiedSchema = new mongoose.Schema({
+  level: {
+    type: String,
+    enum: ['easy', 'moderate', 'visual'],
+    default: 'easy'
+  },
+  text: { type: String },
+  createdAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+const contentSchema = new mongoose.Schema({
+  topic: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  originalText: {
+    type: String,
+    required: true
+  },
+  simplifiedVersions: [simplifiedSchema],
+  tags: [String],
+  media: {
+    imageUrls: [String],
+    videoUrls: [String]
+  },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+module.exports = mongoose.model('Content', contentSchema);
+
+
+===== File: /models/Session.js =====
+const mongoose = require('mongoose');
+
+const sessionSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  interactions: [
+    {
+      question: String,
+      answer: String,
+      timestamp: { type: Date, default: Date.now }
+    }
+  ],
+  createdAt: { type: Date, default: Date.now }
+});
+
+module.exports = mongoose.model('Session', sessionSchema);
+
+
+===== File: /models/User.js =====
+const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
+
+const userSchema = new mongoose.Schema({
+  name: { type: String }, // optional display name
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+
+  preferences: {
+    readingLevel: { type: String, default: 'basic' }, // basic, intermediate, advanced
+    fontSize: { type: String, default: 'medium' },
+    theme: { type: String, default: 'light' },
+    ttsEnabled: { type: Boolean, default: false }
+  },
+
+  createdAt: { type: Date, default: Date.now }
+});
+
+// 🔒 Hash password before saving
+userSchema.pre('save', async function (next) {
+  if (!this.isModified('password')) return next();
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+  next();
+});
+
+// 🔐 Password check method
+userSchema.methods.matchPassword = async function (enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+
+module.exports = mongoose.model('User', userSchema);
+
+
+===== File: /routes/authRoutes.js =====
+const express = require('express');
+const router = express.Router();
+const { signup, login } = require('../controllers/authController');
+
+router.post('/signup', signup);
+router.post('/login', login);
+
+module.exports = router;
+
+
+===== File: /routes/contentRoutes.js =====
+const express = require('express');
+const router = express.Router();
+const contentController = require('../controllers/contentController');
+
+router.get('/:topic', contentController.getContentByTopic);
+router.post('/simplify', contentController.simplifyText);
+
+module.exports = router;
+
+
+===== File: /routes/qaRoutes.js =====
+const express = require('express');
+const router = express.Router();
+const qaController = require('../controllers/qaController');
+
+router.post('/ask', qaController.askQuestion);
+
+module.exports = router;
+
+
+===== File: /app.js =====
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+
+
+require('dotenv').config();
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+const contentRoutes = require('./routes/contentRoutes');
+const qaRoutes = require('./routes/qaRoutes');
+const authRoutes = require('./routes/authRoutes');
+app.use('/api/auth', authRoutes);
+
+app.use('/api/qa', qaRoutes);
+
+app.use('/api/content', contentRoutes);
+
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB connected"))
+  .catch(err => console.error(err));
+
+app.get("/", (req, res) => res.send("API Running"));
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
