@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const Navbar = () => {
     const { isAuthenticated, user, logout } = useAuth();
+    console.log("user::", user)
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -19,6 +20,9 @@ const Navbar = () => {
                     Accessible Learning
                 </Link>
                 <div className="space-x-4 flex items-center">
+                {isAuthenticated && user?.role === 'admin' && (
+  <Link to="/admin" className="text-white hover:text-primary-light">Admin</Link>
+)}
                     {isAuthenticated ? (
                         <>
                             <Link to="/dashboard" className="text-white hover:text-primary-light">Dashboard</Link>

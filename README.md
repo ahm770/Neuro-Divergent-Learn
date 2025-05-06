@@ -21,3 +21,7 @@ OPENROUTER_API_KEY=sk-or-v1-31ab55fdb7d644e35308be2325fb606a4bd53edfa07d3d29c3cc
 # Recommended by OpenRouter for API calls
 YOUR_SITE_URL=http://localhost:3000 # Or your deployed frontend URL
 YOUR_SITE_NAME=NeuroDivergentLearn # Or your app's name
+
+OPENROUTER_DEFAULT_MODEL="mistralai/mistral-7b-instruct:free" # Or your preferred model
+PORT=5000
+NODE_ENV=development

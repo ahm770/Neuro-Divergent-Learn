@@ -1,13 +1,52 @@
 
+===== File: /utils/generateToken.js =====
+// ===== File: /utils/generateToken.js =====
+const jwt = require('jsonwebtoken');
+
+const generateToken = (id) => {
+  // Check if JWT_SECRET is set
+  if (!process.env.JWT_SECRET) {
+      // Throw an error instead of exiting, so it can be caught by a global error handler or at startup
+      throw new Error('FATAL ERROR: JWT_SECRET is not defined in .env file.');
+  }
+
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: '30d', // Token expires in 30 days (adjust as needed)
+  });
+};
+
+module.exports = generateToken;
+
 ===== File: /controllers/authController.js =====
 const User = require('../models/User');
 const generateToken = require('../utils/generateToken');
+const { validationResult } = require('express-validator'); // For input validation
+
+// Validation rules (can be moved to a separate validation file later)
+const { body } = require('express-validator');
+
+exports.signupValidation = [
+  body('name').optional().trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
+  body('email').isEmail().withMessage('Please provide a valid email').normalizeEmail(),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+];
+
+exports.loginValidation = [
+  body('email').isEmail().withMessage('Please provide a valid email').normalizeEmail(),
+  body('password').exists().withMessage('Password is required')
+];
+
 
 exports.signup = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
   try {
     const { name, email, password } = req.body;
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) return res.status(400).json({ error: 'User already exists' });
 
     const user = await User.create({ name, email, password });
@@ -16,19 +55,26 @@ exports.signup = async (req, res) => {
       _id: user._id,
       name: user.name,
       email: user.email,
+      preferences: user.preferences,
       token: generateToken(user._id)
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Signup error:", err);
+    res.status(500).json({ error: err.message || 'Server error during signup' });
   }
 };
 
 exports.login = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user || !(await user.matchPassword(password))) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -37,121 +83,771 @@ exports.login = async (req, res) => {
       _id: user._id,
       name: user.name,
       email: user.email,
+      preferences: user.preferences,
       token: generateToken(user._id)
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Login error:", err);
+    res.status(500).json({ error: err.message || 'Server error during login' });
+  }
+};
+
+// Get current logged-in user's profile
+exports.getMe = async (req, res) => {
+    try {
+        // req.user is populated by the 'protect' middleware
+        const user = await User.findById(req.user.id).select('-password');
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+        res.json({
+            _id: user._id,
+            name: user.name,
+            email: user.email,
+            preferences: user.preferences,
+            createdAt: user.createdAt
+        });
+    } catch (err) {
+        console.error("GetMe error:", err);
+        res.status(500).json({ error: 'Server error fetching user profile' });
+    }
+};
+
+// Update user preferences
+exports.updatePreferences = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { readingLevel, fontSize, theme, preferredContentMode, ttsEnabled } = req.body;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Validate and update preferences
+        if (readingLevel && ['basic', 'intermediate', 'advanced'].includes(readingLevel)) {
+            user.preferences.readingLevel = readingLevel;
+        }
+        if (fontSize && ['small', 'medium', 'large', 'xlarge'].includes(fontSize)) {
+            user.preferences.fontSize = fontSize;
+        }
+        if (theme && ['light', 'dark', 'high-contrast'].includes(theme)) {
+            user.preferences.theme = theme;
+        }
+        if (preferredContentMode && ['text', 'video', 'visual', 'audio'].includes(preferredContentMode)) {
+            user.preferences.preferredContentMode = preferredContentMode;
+        }
+        if (typeof ttsEnabled === 'boolean') {
+            user.preferences.ttsEnabled = ttsEnabled;
+        }
+
+        await user.save();
+        res.json({
+            message: 'Preferences updated successfully',
+            preferences: user.preferences
+        });
+
+    } catch (err) {
+        console.error("UpdatePreferences error:", err);
+        res.status(500).json({ error: 'Server error updating preferences' });
+    }
+};
+
+===== File: /controllers/contentController.js =====
+// ===== File: /controllers/contentController.js =====
+const axios = require('axios');
+const Content = require('../models/Content');
+const User = require('../models/User'); // Needed for user preferences
+
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_DEFAULT_MODEL = process.env.OPENROUTER_DEFAULT_MODEL || 'mistralai/mistral-7b-instruct:free';
+const YOUR_SITE_URL = process.env.YOUR_SITE_URL || 'http://localhost:3000'; // Default if not set
+const YOUR_SITE_NAME = process.env.YOUR_SITE_NAME || 'AccessibleLearningPortal'; // Default if not set
+
+
+// --- Helper to map user reading level to simplification level ---
+const mapReadingLevelToSimplifyLevel = (readingLevel) => {
+  switch (readingLevel) {
+    case 'basic':
+      return 'easy';
+    case 'intermediate':
+    case 'advanced': // For now, group intermediate and advanced to 'moderate'
+      return 'moderate';
+    default:
+      return 'easy'; // Default simplification level
+  }
+};
+
+// --- NEW: CRUD Operations for Content (Example: Admin/Instructor role) ---
+
+// CREATE Content (Protected, e.g., for admins/instructors)
+exports.createContent = async (req, res) => {
+  try {
+    const { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations } = req.body;
+
+    if (!topic || !originalText) {
+      return res.status(400).json({ error: 'Topic and originalText are required.' });
+    }
+
+    const existingContent = await Content.findOne({ topic: topic.toLowerCase().trim() });
+    if (existingContent) {
+      return res.status(400).json({ error: `Content for topic "${topic}" already exists.` });
+    }
+
+    const newContent = new Content({
+      topic: topic.toLowerCase().trim(),
+      originalText,
+      tags: tags || [],
+      media: { imageUrls: imageUrls || [] },
+      videoExplainers: videoExplainers || [],
+      audioNarrations: audioNarrations || [],
+      createdBy: req.user._id // Assumes 'protect' middleware adds user
+    });
+
+    await newContent.save();
+    res.status(201).json(newContent);
+
+  } catch (err) {
+    console.error("Error creating content:", err.message);
+    res.status(500).json({ error: 'Failed to create content' });
+  }
+};
+
+// READ All Content (Paginated, perhaps) - Basic version for now
+exports.getAllContent = async (req, res) => {
+  try {
+    const contents = await Content.find().select('topic tags createdAt').sort({ createdAt: -1 }); // Send limited info
+    res.json(contents);
+  } catch (err) {
+    console.error("Error fetching all content:", err.message);
+    res.status(500).json({ error: 'Failed to retrieve content list' });
+  }
+};
+
+// READ Content by ID (more specific than by topic if needed)
+exports.getContentById = async (req, res) => {
+    try {
+        const content = await Content.findById(req.params.id).populate('createdBy', 'name email');
+        if (!content) {
+            return res.status(404).json({ message: 'Content not found.' });
+        }
+        res.json(content);
+    } catch (err) {
+        console.error("Error fetching content by ID:", err.message);
+        if (err.kind === 'ObjectId') {
+             return res.status(400).json({ message: 'Invalid content ID format.' });
+        }
+        res.status(500).json({ error: 'Failed to retrieve content' });
+    }
+};
+
+
+// UPDATE Content (Protected)
+exports.updateContent = async (req, res) => {
+  try {
+    const { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations, simplifiedVersions, visualMaps } = req.body;
+    const contentId = req.params.id;
+
+    let content = await Content.findById(contentId);
+    if (!content) {
+      return res.status(404).json({ error: 'Content not found.' });
+    }
+
+    // Optionally, check if user is creator or admin before allowing update
+    // if (content.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    //   return res.status(403).json({ error: 'User not authorized to update this content.' });
+    // }
+
+    if (topic) content.topic = topic.toLowerCase().trim();
+    if (originalText) content.originalText = originalText;
+    if (tags) content.tags = tags;
+    if (imageUrls) content.media.imageUrls = imageUrls;
+    if (videoExplainers) content.videoExplainers = videoExplainers;
+    if (audioNarrations) content.audioNarrations = audioNarrations;
+    if (simplifiedVersions) content.simplifiedVersions = simplifiedVersions; // Allows direct update of simplified cache
+    if (visualMaps) content.visualMaps = visualMaps; // Allows direct update of visual maps
+
+    content.lastUpdatedBy = req.user._id;
+    content.updatedAt = Date.now();
+
+    const updatedContent = await content.save();
+    res.json(updatedContent);
+
+  } catch (err) {
+    console.error("Error updating content:", err.message);
+    if (err.kind === 'ObjectId') {
+         return res.status(400).json({ message: 'Invalid content ID format.' });
+    }
+    res.status(500).json({ error: 'Failed to update content' });
+  }
+};
+
+// DELETE Content (Protected)
+exports.deleteContent = async (req, res) => {
+  try {
+    const contentId = req.params.id;
+    const content = await Content.findById(contentId);
+
+    if (!content) {
+      return res.status(404).json({ error: 'Content not found.' });
+    }
+
+    // Optionally, check if user is creator or admin
+    // if (content.createdBy.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    //   return res.status(403).json({ error: 'User not authorized to delete this content.' });
+    // }
+
+    await content.deleteOne(); // Mongoose 6+ uses deleteOne()
+    res.json({ message: 'Content removed successfully.' });
+
+  } catch (err) {
+    console.error("Error deleting content:", err.message);
+    if (err.kind === 'ObjectId') {
+         return res.status(400).json({ message: 'Invalid content ID format.' });
+    }
+    res.status(500).json({ error: 'Failed to delete content' });
   }
 };
 
 
-===== File: /controllers/contentController.js =====
-const axios = require('axios');
-const Content = require('../models/Content');
+// --- Function to get content by topic (for student consumption) ---
+exports.getContentByTopic = async (req, res) => {
+    try {
+        const topic = req.params.topic.toLowerCase().trim();
+        // Fetch user preferences if available to select preferred simplified version later
+        const user = req.user ? await User.findById(req.user.id).select('preferences') : null;
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+        const content = await Content.findOne({ topic: topic }).populate('createdBy', 'name');
 
+        if (!content) {
+            return res.status(404).json({ message: `Content not found for topic: ${topic}` });
+        }
+
+        // Prepare response. Frontend can then choose which part to display.
+        // Here we could intelligently select a default simplified version based on user prefs.
+        let responseContent = { ...content.toObject() }; // Make a mutable copy
+
+        if (user && user.preferences && user.preferences.readingLevel) {
+            const preferredLevel = mapReadingLevelToSimplifyLevel(user.preferences.readingLevel);
+            const preferredSimplifiedVersion = content.simplifiedVersions.find(v => v.level === preferredLevel);
+            if (preferredSimplifiedVersion) {
+                responseContent.defaultSimplifiedText = preferredSimplifiedVersion.text;
+                responseContent.defaultSimplifiedLevel = preferredSimplifiedVersion.level;
+            }
+        }
+
+        res.json(responseContent);
+
+    } catch (err) {
+        console.error("Error fetching content by topic:", err.message);
+        res.status(500).json({ error: 'Failed to retrieve content' });
+    }
+};
+
+
+// --- Content Mode Switching: Text Simplification ---
 exports.simplifyContent = async (req, res) => {
   try {
-    const { topic, level = 'easy' } = req.body;
+    const userId = req.user._id; // From 'protect' middleware
+    const user = await User.findById(userId).select('preferences'); // Get user preferences
 
-    const content = await Content.findOne({ topic });
-    if (!content) {
-      return res.status(404).json({ error: 'Content not found' });
+    const { topic } = req.body;
+    let { level } = req.body; // Requested level e.g. 'easy', 'moderate'
+
+    if (!topic) {
+        return res.status(400).json({ error: "Topic is required for simplification." });
     }
 
-    const prompt = `Simplify the following educational text for a ${level} understanding:\n\n${content.originalText}`;
+    // If no level is specified in request, use user's preferred reading level
+    if (!level && user && user.preferences && user.preferences.readingLevel) {
+      level = mapReadingLevelToSimplifyLevel(user.preferences.readingLevel);
+    } else if (!level) {
+      level = 'easy'; // Fallback to 'easy' if no user preference or request param
+    }
+
+    if (!['easy', 'moderate'].includes(level)) {
+        return res.status(400).json({ error: "Invalid simplification level. Choose 'easy' or 'moderate'." });
+    }
+
+    let contentDoc = await Content.findOne({ topic: topic.toLowerCase().trim() });
+    if (!contentDoc) {
+      return res.status(404).json({ error: `Content for topic "${topic}" not found.` });
+    }
+
+    const existingSimplified = contentDoc.simplifiedVersions.find(v => v.level === level);
+    if (existingSimplified) {
+       console.log(`Returning cached simplified version for topic: ${topic}, level: ${level}`);
+       return res.json({ simplifiedText: existingSimplified.text, level: existingSimplified.level });
+    }
+
+    console.log(`Generating new simplified version for topic: ${topic}, level: ${level}`);
+    const prompt = `Simplify the following educational text about "${contentDoc.topic}" for a student who needs an "${level}" level of understanding. Focus on very clear language, short sentences, and key concepts. Original text:\n\n${contentDoc.originalText}`;
 
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'mistral/mistral-7b-instruct:free',
+        model: OPENROUTER_DEFAULT_MODEL,
         messages: [
-          { role: 'system', content: 'You are a helpful tutor who simplifies text.' },
+          { role: 'system', content: 'You are an expert tutor who simplifies educational text clearly and concisely for neurodivergent students.' },
           { role: 'user', content: prompt }
-        ]
+        ],
+        // max_tokens: 500 // Optional: Adjust based on expected length
       },
       {
         headers: {
           'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'HTTP-Referer': YOUR_SITE_URL,
+          'X-Title': YOUR_SITE_NAME
         }
       }
     );
 
-    const simplifiedText = response.data.choices[0].message.content;
+     if (!response.data || !response.data.choices || response.data.choices.length === 0 || !response.data.choices[0].message) {
+       console.error("Invalid response structure from OpenRouter API:", response.data);
+       throw new Error('Invalid response structure from OpenRouter API');
+     }
 
-    // Add simplified version to array
-    content.simplifiedVersions.push({
-      level,
-      text: simplifiedText
-    });
+    const simplifiedText = response.data.choices[0].message.content.trim();
 
-    await content.save();
+    contentDoc.simplifiedVersions.push({ level, text: simplifiedText });
+    await contentDoc.save();
 
-    res.json({ simplifiedText });
+    res.json({ simplifiedText, level });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Error in simplifyContent:", err.response ? JSON.stringify(err.response.data, null, 2) : err.message, err.stack);
+    res.status(500).json({ error: err.message || 'Failed to simplify content' });
   }
 };
 
+// ... (other parts of contentController.js)
+
+// --- Content Mode Switching: Generate Visual Map (Potentially Mermaid) ---
+exports.generateVisualMap = async (req, res) => {
+  try {
+      const { topic, format = 'text_outline' } = req.body; // Allow requesting format, default to text_outline
+      // const userId = req.user._id;
+
+      if (!topic) {
+          return res.status(400).json({ error: "Topic is required for visual map generation." });
+      }
+      if (!['text_outline', 'mermaid'].includes(format)) {
+          return res.status(400).json({ error: "Invalid visual map format. Supported: 'text_outline', 'mermaid'." });
+      }
+
+      let contentDoc = await Content.findOne({ topic: topic.toLowerCase().trim() });
+      if (!contentDoc) {
+          return res.status(404).json({ error: `Content for topic "${topic}" not found.` });
+      }
+
+      const existingMap = contentDoc.visualMaps.find(v => v.format === format);
+      if (existingMap) {
+          console.log(`Returning cached visual map (format: ${format}) for topic: ${topic}`);
+          return res.json({ visualMap: existingMap });
+      }
+
+      console.log(`Generating new visual map (format: ${format}) for topic: ${topic}`);
+      
+      let prompt;
+      let systemMessage = 'You are an AI that structures educational content for visualization.';
+
+      if (format === 'mermaid') {
+          systemMessage = 'You are an AI that generates MermaidJS syntax for mind maps or flowcharts from educational text. Use graph TD or mindmap syntax where appropriate.';
+          prompt = `Generate MermaidJS syntax for a mind map or concept map representing the key concepts and their relationships from the following text about "${contentDoc.topic}".
+Focus on clarity and simplicity. Use graph TD or mindmap syntax. Ensure the output is only valid Mermaid code.
+Original text (excerpt):
+---
+${contentDoc.originalText.substring(0, 2000)}
+---
+Mermaid Code:`;
+      } else { // text_outline
+          prompt = `Create a structured text outline or list of key concepts and sub-concepts for the educational topic "${contentDoc.topic}". This will be used to help visualize the topic. Focus on hierarchical relationships. Original text:\n\n${contentDoc.originalText.substring(0, 2000)}`;
+      }
+
+      const response = await axios.post(
+          'https://openrouter.ai/api/v1/chat/completions',
+          {
+              model: OPENROUTER_DEFAULT_MODEL, // Consider more powerful models for Mermaid
+              messages: [
+                  { role: 'system', content: systemMessage },
+                  { role: 'user', content: prompt }
+              ],
+          },
+          {
+              headers: {
+                  'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+                  'Content-Type': 'application/json',
+                  'HTTP-Referer': YOUR_SITE_URL,
+                  'X-Title': YOUR_SITE_NAME
+              }
+          }
+      );
+
+      if (!response.data || !response.data.choices || response.data.choices.length === 0 || !response.data.choices[0].message) {
+          throw new Error('Invalid response structure from OpenRouter API for visual map');
+      }
+
+      let visualMapData = response.data.choices[0].message.content.trim();
+
+      // Clean up potential "Mermaid Code:" prefix or backticks if LLM includes them
+      if (format === 'mermaid') {
+          visualMapData = visualMapData.replace(/^Mermaid Code:\s*/i, '');
+          visualMapData = visualMapData.replace(/^```mermaid\s*\n?([\s\S]*?)\n?```$/, '$1').trim();
+          visualMapData = visualMapData.replace(/^```\s*\n?([\s\S]*?)\n?```$/, '$1').trim(); // Generic backtick removal
+      }
+
+
+      const newVisualMap = {
+          format: format,
+          data: visualMapData,
+          notes: `AI-generated ${format}.`
+      };
+
+      contentDoc.visualMaps.push(newVisualMap);
+      contentDoc.lastUpdatedBy = req.user._id;
+      await contentDoc.save();
+
+      res.json({ visualMap: newVisualMap });
+
+  } catch (err) {
+      console.error("Error in generateVisualMap:", err.response ? JSON.stringify(err.response.data, null, 2) : err.message, err.stack);
+      res.status(500).json({ error: err.message || 'Failed to generate visual map' });
+  }
+};
+
+exports.generateAudioNarration = async (req, res) => {
+  const { contentId, textToNarrate, language = 'en-US', voice = 'default' } = req.body;
+  // textToNarrate could be originalText, simplifiedText, or custom
+  // In a real app, you'd pick simplifiedText or originalText from the contentId
+
+  if (!contentId || !textToNarrate) {
+      return res.status(400).json({ error: 'contentId and textToNarrate are required.' });
+  }
+
+  try {
+      const contentDoc = await Content.findById(contentId);
+      if (!contentDoc) {
+          return res.status(404).json({ error: 'Content not found.' });
+      }
+
+      console.log(`Request to generate audio for contentId: ${contentId}, language: ${language}, voice: ${voice}`);
+      // TODO: Integrate with a Text-to-Speech API (e.g., AWS Polly, Google Cloud TTS, ElevenLabs)
+      // 1. Send `textToNarrate` to TTS API.
+      // 2. Get back an audio file URL or raw audio data.
+      // 3. If raw data, upload to a storage service (S3, Google Cloud Storage) to get a URL.
+      // 4. Save the URL to the Content document.
+
+      // --- Placeholder Logic ---
+      const placeholderAudioUrl = `https://example.com/audio/${contentDoc.topic.replace(/\s+/g, '-')}-${Date.now()}.mp3`;
+      const newNarration = {
+          language,
+          voice,
+          url: placeholderAudioUrl,
+          createdAt: new Date()
+      };
+      contentDoc.audioNarrations.push(newNarration);
+      contentDoc.lastUpdatedBy = req.user._id;
+      await contentDoc.save();
+      // --- End Placeholder ---
+
+      res.status(201).json({
+          message: 'Audio narration generation initiated (placeholder).',
+          narration: newNarration,
+          content: contentDoc
+      });
+
+  } catch (err) {
+      console.error("Error in generateAudioNarration:", err.message, err.stack);
+      res.status(500).json({ error: 'Failed to generate audio narration.' });
+  }
+};
+
+// --- NEW: Find Video Explainers (Placeholder for YouTube/Vimeo API Integration) ---
+exports.findVideoExplainers = async (req, res) => {
+  const { contentId, query } = req.body; // query could be contentDoc.topic
+
+  if (!contentId || !query) {
+      return res.status(400).json({ error: 'contentId and query (topic) are required.' });
+  }
+  
+  try {
+      const contentDoc = await Content.findById(contentId);
+      if (!contentDoc) {
+          return res.status(404).json({ error: 'Content not found.' });
+      }
+
+      console.log(`Request to find videos for query: ${query} (contentId: ${contentId})`);
+      // TODO: Integrate with YouTube Data API or Vimeo API
+      // 1. Use `query` to search for relevant videos.
+      // 2. Present results to admin/user to select. (This part is tricky for a simple API call)
+      // 3. For now, let's assume we found one and are adding it.
+
+      // --- Placeholder Logic ---
+      // Simulate finding a YouTube video
+      const placeholderVideo = {
+          source: 'youtube',
+          url: `https://www.youtube.com/watch?v=example${Date.now().toString().slice(-5)}`,
+          title: `Placeholder Video for ${query}`,
+          description: `An AI-found video about ${query}.`,
+          createdAt: new Date()
+      };
+      // Prevent duplicates if this is run multiple times
+      const existingVideo = contentDoc.videoExplainers.find(v => v.url === placeholderVideo.url);
+      if (!existingVideo) {
+          contentDoc.videoExplainers.push(placeholderVideo);
+          contentDoc.lastUpdatedBy = req.user._id;
+          await contentDoc.save();
+      }
+      // --- End Placeholder ---
+
+      res.json({
+          message: 'Video search initiated (placeholder). Found videos added.',
+          videosAdded: existingVideo ? 0 : 1,
+          content: contentDoc
+      });
+
+  } catch (err) {
+      console.error("Error in findVideoExplainers:", err.message, err.stack);
+      res.status(500).json({ error: 'Failed to find video explainers.' });
+  }
+};
 
 ===== File: /controllers/qaController.js =====
+// ===== File: /controllers/qaController.js =====
+const axios = require('axios');
+const Session = require('../models/Session');
+const Content = require('../models/Content');
+const User = require('../models/User'); // To get user preferences
 
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_DEFAULT_MODEL = process.env.OPENROUTER_DEFAULT_MODEL || 'mistralai/mistral-7b-instruct:free';
+const YOUR_SITE_URL = process.env.YOUR_SITE_URL || 'http://localhost:3000';
+const YOUR_SITE_NAME = process.env.YOUR_SITE_NAME || 'AccessibleLearningPortal';
+
+// Helper to map user reading level to simplification level for context
+const mapReadingLevelToSimplifyLevel = (readingLevel) => {
+  switch (readingLevel) {
+    case 'basic': return 'easy';
+    case 'intermediate': case 'advanced': return 'moderate';
+    default: return 'easy';
+  }
+};
+
+exports.askQuestion = async (req, res) => {
+  try {
+    const { question, topic } = req.body;
+    const userId = req.user._id;
+
+    if (!question || !topic) {
+      return res.status(400).json({ error: 'Question and topic are required.' });
+    }
+
+    const user = await User.findById(userId).select('preferences');
+    const userReadingLevel = user?.preferences?.readingLevel || 'basic';
+    const preferredSimplifyLevel = mapReadingLevelToSimplifyLevel(userReadingLevel);
+
+    // 1. Fetch context based on the topic
+    const content = await Content.findOne({ topic: topic.toLowerCase().trim() });
+    let contextText = "General knowledge.";
+    let contextUsed = 'general_knowledge';
+
+    if (content) {
+        // Prioritize using a simplified version matching user's preference if available
+        const preferredSimplifiedVersion = content.simplifiedVersions.find(v => v.level === preferredSimplifyLevel);
+        if (preferredSimplifiedVersion) {
+            contextText = preferredSimplifiedVersion.text;
+            contextUsed = `simplified_${preferredSimplifyLevel}`;
+        } else {
+            // Fallback to any 'easy' simplified version if preferred not found
+            const easyVersion = content.simplifiedVersions.find(v => v.level === 'easy');
+            if (easyVersion) {
+                contextText = easyVersion.text;
+                contextUsed = 'simplified_easy';
+            } else {
+                contextText = content.originalText; // Fallback to original if no suitable simplified version
+                contextUsed = 'original';
+            }
+        }
+    } else {
+         console.warn(`Content not found for topic "${topic}" in QA, using general context.`);
+    }
+
+    // 2. Construct prompt for LLM, incorporating user preference for clarity
+    let promptIntro = `You are a friendly, patient, and helpful tutor for a neurodivergent student. The student prefers explanations that are very clear, simple, and tailored for a '${userReadingLevel}' reading level.`;
+    if (user?.preferences?.preferredContentMode === 'visual') {
+        promptIntro += " The student sometimes benefits from analogies or visualizable descriptions if appropriate for the question."
+    }
+
+    const prompt = `${promptIntro}
+Context on the topic "${topic}":
+---
+${contextText.substring(0, 2500)}
+---
+Based *primarily* on the provided context, answer the student's question. If the context is insufficient, you may use your general knowledge but state that you are doing so. If the question is completely outside the context and your general knowledge, clearly say you don't have the information.
+Student's Question: "${question}"
+Answer:`;
+
+    // 3. Call OpenRouter API
+    const response = await axios.post(
+      'https://openrouter.ai/api/v1/chat/completions',
+      {
+        model: OPENROUTER_DEFAULT_MODEL,
+        messages: [
+          // System message sets the persona more broadly
+          { role: 'system', content: `You are a friendly, patient, and helpful tutor for a neurodivergent student who needs clear and simple explanations. Adapt your language complexity to a '${userReadingLevel}' reading level.` },
+          { role: 'user', content: prompt }
+        ],
+        // max_tokens: 200 // Optionally limit response length
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': YOUR_SITE_URL,
+          'X-Title': YOUR_SITE_NAME
+        }
+      }
+    );
+
+    if (!response.data || !response.data.choices || response.data.choices.length === 0 || !response.data.choices[0].message) {
+        console.error("Invalid response structure from OpenRouter API:", response.data);
+        throw new Error('Invalid response structure from OpenRouter API');
+    }
+
+    const answer = response.data.choices[0].message.content.trim();
+
+    // 4. Log interaction
+    await Session.findOneAndUpdate(
+        { userId: userId },
+        {
+            $push: {
+                interactions: {
+                    question: question,
+                    answer: answer,
+                    topic: topic,
+                    contextUsed: contextUsed // Log which context was used
+                }
+            },
+            $setOnInsert: { createdAt: new Date() }
+        },
+        { upsert: true, new: true }
+    );
+
+    res.json({ answer });
+
+  } catch (err) {
+    console.error("Error in askQuestion:", err.response ? JSON.stringify(err.response.data, null, 2) : err.message, err.stack);
+    res.status(500).json({ error: err.message || 'Failed to get answer' });
+  }
+};
 
 ===== File: /models/Content.js =====
 const mongoose = require('mongoose');
 
 const simplifiedSchema = new mongoose.Schema({
-  level: {
+  level: { // 'easy', 'moderate' correspond to user reading levels
     type: String,
-    enum: ['easy', 'moderate', 'visual'],
-    default: 'easy'
+    enum: ['easy', 'moderate'], // 'visual' mode is handled differently
+    required: true
   },
   text: { type: String },
   createdAt: { type: Date, default: Date.now }
 }, { _id: false });
 
+// Schema for visual map data (could be JSON, Mermaid syntax, etc.)
+const visualMapSchema = new mongoose.Schema({
+  format: { type: String, enum: ['mermaid', 'json_graph', 'text_outline'], default: 'text_outline' },
+  data: { type: String, required: true }, // Stores the actual visual data string
+  notes: String, // Optional notes about the visual map
+  createdAt: { type: Date, default: Date.now }
+}, { _id: false });
+
+
 const contentSchema = new mongoose.Schema({
   topic: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    lowercase: true,
+    trim: true
   },
   originalText: {
     type: String,
     required: true
   },
+  // For 'text summary' and 'dyslexia-friendly font' (applied on frontend)
   simplifiedVersions: [simplifiedSchema],
+  // For 'visual map (concept maps)'
+  visualMaps: [visualMapSchema],
+  // For 'audio narration' (could be URL to generated TTS or uploaded file)
+  audioNarrations: [
+    {
+      language: { type: String, default: 'en-US' },
+      voice: { type: String, default: 'default' }, // Could specify voice model later
+      url: { type: String, required: true },
+      createdAt: { type: Date, default: Date.now }
+    }
+  ],
+  // For 'video explainer (auto-generated or sourced)'
+  videoExplainers: [
+    {
+      source: { type: String, enum: ['youtube', 'vimeo', 'custom_upload', 'generated'], default: 'youtube' },
+      url: { type: String, required: true },
+      title: String,
+      description: String,
+      createdAt: { type: Date, default: Date.now }
+    }
+  ],
   tags: [String],
+  // This 'media' field might become redundant or used for other generic media
+  // if specific types like audio/video are handled above.
+  // For now, let's keep it for images or general files.
   media: {
     imageUrls: [String],
-    videoUrls: [String]
+    // videoUrls: [String], // Moved to videoExplainers for more structure
   },
-  createdBy: {
+  createdBy: { // User who originally created/uploaded this content
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    // required: true // Make required if all content must be admin-added
+  },
+  lastUpdatedBy: { // User who last modified this content
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
   createdAt: {
     type: Date,
     default: Date.now
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now
   }
 });
 
-module.exports = mongoose.model('Content', contentSchema);
+// Update `updatedAt` timestamp before saving
+contentSchema.pre('save', function(next) {
+  if (this.isModified()) {
+    this.updatedAt = Date.now();
+  }
+  next();
+});
 
+module.exports = mongoose.model('Content', contentSchema);
 
 ===== File: /models/Session.js =====
 const mongoose = require('mongoose');
 
 const sessionSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   interactions: [
     {
       question: String,
       answer: String,
+      topic: String, // Added topic field
+      contextUsed: String, // e.g., 'original', 'simplified_easy', 'general_knowledge'
       timestamp: { type: Date, default: Date.now }
     }
   ],
@@ -160,26 +856,34 @@ const sessionSchema = new mongoose.Schema({
 
 module.exports = mongoose.model('Session', sessionSchema);
 
-
 ===== File: /models/User.js =====
+// ===== File: /models/User.js =====
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
 const userSchema = new mongoose.Schema({
-  name: { type: String }, // optional display name
-  email: { type: String, required: true, unique: true },
+  name: { type: String },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
 
+  role: { // <-- NEW FIELD
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user'
+  },
+
   preferences: {
-    readingLevel: { type: String, default: 'basic' }, // basic, intermediate, advanced
-    fontSize: { type: String, default: 'medium' },
-    theme: { type: String, default: 'light' },
+    readingLevel: { type: String, default: 'basic', enum: ['basic', 'intermediate', 'advanced'] },
+    fontSize: { type: String, default: 'medium', enum: ['small', 'medium', 'large', 'xlarge'] },
+    theme: { type: String, default: 'light', enum: ['light', 'dark', 'high-contrast'] },
+    preferredContentMode: { type: String, default: 'text', enum: ['text', 'video', 'visual', 'audio']},
     ttsEnabled: { type: Boolean, default: false }
   },
 
   createdAt: { type: Date, default: Date.now }
 });
 
+// ... rest of the User model (pre-save hook, matchPassword method) ...
 // 🔒 Hash password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
@@ -195,65 +899,141 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 
 module.exports = mongoose.model('User', userSchema);
 
-
 ===== File: /routes/authRoutes.js =====
 const express = require('express');
 const router = express.Router();
-const { signup, login } = require('../controllers/authController');
+const { signup, login, getMe, updatePreferences, signupValidation, loginValidation } = require('../controllers/authController');
+const { protect } = require('../middleware/authMiddleware');
 
-router.post('/signup', signup);
-router.post('/login', login);
+router.post('/signup', signupValidation, signup);
+router.post('/login', loginValidation, login);
+router.get('/me', protect, getMe); // New route to get current user profile
+router.put('/preferences', protect, updatePreferences); // New route to update preferences
 
 module.exports = router;
 
-
 ===== File: /routes/contentRoutes.js =====
+// ===== File: /server/routes/contentRoutes.js =====
 const express = require('express');
 const router = express.Router();
 const contentController = require('../controllers/contentController');
+const { protect, isAdmin } = require('../middleware/authMiddleware'); // Import isAdmin
 
-router.get('/:topic', contentController.getContentByTopic);
-router.post('/simplify', contentController.simplifyText);
+// --- Routes for general users (protected) ---
+router.get('/', protect, contentController.getAllContent);
+router.get('/topic/:topic', protect, contentController.getContentByTopic);
+router.post('/simplify', protect, contentController.simplifyContent);
+router.post('/visual-map', protect, contentController.generateVisualMap);
+// Add routes for audio/video generation/sourcing for users later if needed
+
+// --- CRUD Routes for Content (Protected and Admin Only) ---
+router.post('/create', protect, isAdmin, contentController.createContent);
+router.get('/:id', protect, isAdmin, contentController.getContentById); // Admin can get by ID for management
+router.put('/:id', protect, isAdmin, contentController.updateContent);
+router.delete('/:id', protect, isAdmin, contentController.deleteContent);
+
+// --- NEW: Routes for Audio/Video (Admin-focused initially) ---
+router.post('/generate-audio', protect, isAdmin, contentController.generateAudioNarration);
+router.post('/find-videos', protect, isAdmin, contentController.findVideoExplainers);
+
 
 module.exports = router;
 
-
 ===== File: /routes/qaRoutes.js =====
+// ===== File: /routes/qaRoutes.js =====
 const express = require('express');
 const router = express.Router();
 const qaController = require('../controllers/qaController');
+const { protect } = require('../middleware/authMiddleware'); // Import middleware
 
-router.post('/ask', qaController.askQuestion);
+// POST a question - Requires user to be logged in
+router.post('/ask', protect, qaController.askQuestion);
 
 module.exports = router;
-
 
 ===== File: /app.js =====
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-
+const helmet = require('helmet'); // For security headers
+const morgan = require('morgan'); // For request logging
 
 require('dotenv').config();
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+// --- Environment Variable Check ---
+const requiredEnvVars = [
+  'MONGO_URI',
+  'JWT_SECRET',
+  'OPENROUTER_API_KEY',
+  // 'YOUR_SITE_URL', // Recommended, but provide defaults in controllers if not set
+  // 'YOUR_SITE_NAME', // Recommended, but provide defaults if not set
+  // 'OPENROUTER_DEFAULT_MODEL' // Has a default in controllers
+];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`FATAL ERROR: Environment variable ${envVar} is not defined.`);
+    process.exit(1);
+  }
+}
 
+const app = express();
+
+// --- Middleware ---
+const corsOptions = {
+  origin: [ // Add your frontend URLs here
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+    "http://[::1]:3000",
+    process.env.FRONTEND_URL, // If you have one in .env for deployed frontend
+    "https://opulent-garbanzo-975vgqvp4jj4cg6x-3000.app.github.dev" // Example Codespaces URL
+  ].filter(Boolean), // Filter out undefined/null values
+  credentials: true,
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  preflightContinue: false,
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+app.use(helmet()); // Adds various security HTTP headers
+app.use(express.json({ limit: '10mb' })); // For parsing application/json, increased limit for potential media uploads
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); // For parsing application/x-www-form-urlencoded
+
+if (process.env.NODE_ENV === 'development') {
+  app.use(morgan('dev')); // HTTP request logger middleware (useful for development)
+}
+
+// --- Routes ---
+const authRoutes = require('./routes/authRoutes');
 const contentRoutes = require('./routes/contentRoutes');
 const qaRoutes = require('./routes/qaRoutes');
-const authRoutes = require('./routes/authRoutes');
+// const userRoutes = require('./routes/userRoutes'); // If you create separate user management routes
+
 app.use('/api/auth', authRoutes);
-
-app.use('/api/qa', qaRoutes);
-
 app.use('/api/content', contentRoutes);
+app.use('/api/qa', qaRoutes);
+// app.use('/api/users', userRoutes);
 
+
+// --- Database Connection ---
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch(err => console.error(err));
+  .then(() => console.log("MongoDB connected successfully."))
+  .catch(err => {
+    console.error("MongoDB connection error:", err.message);
+    process.exit(1); // Exit if DB connection fails
+  });
 
-app.get("/", (req, res) => res.send("API Running"));
+// --- Basic Welcome Route ---
+app.get("/", (req, res) => res.send("Accessible Learning Portal API is running."));
+
+// --- Global Error Handler (simple example) ---
+// This should be the last middleware
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err.stack);
+  res.status(err.status || 500).json({
+    error: err.message || 'An unexpected error occurred.',
+    // stack: process.env.NODE_ENV === 'development' ? err.stack : undefined // Optionally show stack in dev
+  });
+});
+
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode.`));

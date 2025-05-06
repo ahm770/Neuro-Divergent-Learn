@@ -1,21 +1,30 @@
+// ===== File: /models/User.js =====
 const mongoose = require('mongoose');
 const bcrypt = require('bcrypt');
 
 const userSchema = new mongoose.Schema({
-  name: { type: String }, // optional display name
-  email: { type: String, required: true, unique: true },
+  name: { type: String },
+  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
 
+  role: { // <-- NEW FIELD
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user'
+  },
+
   preferences: {
-    readingLevel: { type: String, default: 'basic' }, // basic, intermediate, advanced
-    fontSize: { type: String, default: 'medium' },
-    theme: { type: String, default: 'light' },
+    readingLevel: { type: String, default: 'basic', enum: ['basic', 'intermediate', 'advanced'] },
+    fontSize: { type: String, default: 'medium', enum: ['small', 'medium', 'large', 'xlarge'] },
+    theme: { type: String, default: 'light', enum: ['light', 'dark', 'high-contrast'] },
+    preferredContentMode: { type: String, default: 'text', enum: ['text', 'video', 'visual', 'audio']},
     ttsEnabled: { type: Boolean, default: false }
   },
 
   createdAt: { type: Date, default: Date.now }
 });
 
+// ... rest of the User model (pre-save hook, matchPassword method) ...
 // 🔒 Hash password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();

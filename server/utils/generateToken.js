@@ -1,11 +1,11 @@
-// ===== File: /server/utils/generateToken.js =====
+// ===== File: /utils/generateToken.js =====
 const jwt = require('jsonwebtoken');
 
 const generateToken = (id) => {
   // Check if JWT_SECRET is set
   if (!process.env.JWT_SECRET) {
-      console.error('FATAL ERROR: JWT_SECRET is not defined in .env file.');
-      process.exit(1); // Exit the process if the secret is missing
+      // Throw an error instead of exiting, so it can be caught by a global error handler or at startup
+      throw new Error('FATAL ERROR: JWT_SECRET is not defined in .env file.');
   }
 
   return jwt.sign({ id }, process.env.JWT_SECRET, {
