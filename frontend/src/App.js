@@ -19,6 +19,7 @@ import AdminEditContentPage from './pages/admin/AdminEditContentPage';
 // Import Components
 import ProtectedRoute from './components/common/ProtectedRoute';
 import Navbar from './components/common/Navbar';
+import SimpleMermaidTest from './components/common/SimpleMermaidTest';
 
 const App = () => { // Renamed from App to avoid conflict if AuthProvider is here
   const { user } = useAuth();
@@ -82,6 +83,7 @@ const App = () => { // Renamed from App to avoid conflict if AuthProvider is her
                 Theme: {user.preferences.theme}, Font: {user.preferences.fontSize}, Dyslexic: {user.preferences.dyslexiaFontEnabled ? 'On' : 'Off'}
             </div>
         )}
+        <SimpleMermaidTest />
       </footer>
     </div>
   );

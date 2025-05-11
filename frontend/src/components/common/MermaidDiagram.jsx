@@ -1,62 +1,169 @@
-// src/components/MermaidDiagram.jsx
-import React, { useEffect, useRef } from 'react';
-import mermaid from 'mermaid';
+// src/components/common/MermaidDiagram.jsx
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import mermaid from 'mermaid'; // Assuming stable v10.9.1 or similar
 
-// Initialize Mermaid (only once)
-mermaid.initialize({
-  startOnLoad: false, // We'll render manually
-  theme: 'default', // or 'dark', 'forest', etc.
-  // securityLevel: 'loose', // If you have issues with complex diagrams, but be cautious
-  // loglevel: 'debug', // For debugging
-});
+let globalMermaidInitializedForMain = false;
 
 const MermaidDiagram = ({ chartData, diagramId }) => {
-  const mermaidRef = useRef(null);
-  const uniqueId = diagramId || `mermaid-diagram-${Math.random().toString(36).substr(2, 9)}`;
+    const outputContainerRef = useRef(null);
+    const [currentDiagramText, setCurrentDiagramText] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
 
-  useEffect(() => {
-    if (mermaidRef.current && chartData) {
-      try {
-        // mermaid.render needs an ID for the SVG output
-        mermaid.render(uniqueId, chartData, (svgCode) => {
-          if (mermaidRef.current) {
-            mermaidRef.current.innerHTML = svgCode;
-          }
-        });
-      } catch (error) {
-        console.error("Mermaid rendering error:", error);
-        if (mermaidRef.current) {
-          mermaidRef.current.innerHTML = `<pre>Error rendering Mermaid diagram:\n${chartData}\n${error.message}</pre>`;
+    const [renderIdPrefix] = useState(
+        () => diagramId || `mermaid-output-${Math.random().toString(36).substring(2, 9)}`
+    );
+
+    useEffect(() => {
+        if (typeof window !== 'undefined' && !globalMermaidInitializedForMain) {
+            console.log("[MermaidDiagramMain] Initializing Mermaid...");
+            try {
+                mermaid.initialize({
+                    startOnLoad: true,
+                    theme: 'default', // Let's try 'default' or 'neutral' explicitly
+                    // securityLevel: 'loose', // Use with caution
+                    // logLevel: 'debug' // For more verbose mermaid logs
+                });
+                globalMermaidInitializedForMain = true;
+                console.log("[MermaidDiagramMain] Mermaid initialized.");
+            } catch (e) {
+                console.error("[MermaidDiagramMain] Error initializing Mermaid:", e);
+                setErrorMessage(`Mermaid init failed: ${e.message}`);
+            }
         }
-      }
-    } else if (mermaidRef.current) {
-        mermaidRef.current.innerHTML = ''; // Clear if no chartData
-    }
-  }, [chartData, uniqueId]);
+    }, []);
 
-  // If chartData is simple text (e.g. text_outline), render as preformatted text
-  if (typeof chartData === 'string' && !chartData.trim().startsWith('graph') && !chartData.trim().startsWith('mindmap')) {
-    return <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{chartData}</pre>;
-  }
+    useEffect(() => {
+        setCurrentDiagramText(chartData || '');
+        setErrorMessage('');
+    }, [chartData]);
 
-  // If chartData is intended for Mermaid
-  return <div ref={mermaidRef} className="mermaid-container"></div>;
+    useEffect(() => {
+        let isMounted = true;
+
+        const renderMermaidDiagramAsync = async () => {
+            if (!globalMermaidInitializedForMain) {
+                if (isMounted) setErrorMessage('Mermaid not initialized.');
+                return;
+            }
+            if (!outputContainerRef.current) {
+                console.warn("[MermaidDiagramMain] outputContainerRef.current is null during render attempt.");
+                return;
+            }
+            
+            // Ensure container is clear for new render or if no data
+            outputContainerRef.current.innerHTML = '';
+
+            if (!currentDiagramText || typeof currentDiagramText !== 'string' || !currentDiagramText.trim()) {
+                if (isMounted) setIsLoading(false);
+                if (outputContainerRef.current) outputContainerRef.current.innerHTML = '<p class="text-[var(--color-text-secondary)] text-xs italic">No diagram data.</p>';
+                return;
+            }
+
+            const isKnownDiagramType = ['graph', 'mindmap', 'flowchart', /* ... other types ... */]
+                .some(keyword => currentDiagramText.trim().toLowerCase().startsWith(keyword));
+
+            if (!isKnownDiagramType) {
+                if (isMounted) {
+                    // ... (render as preformatted text - same as before) ...
+                    const pre = document.createElement('pre'); /* ... */ pre.textContent = currentDiagramText;
+                    if (outputContainerRef.current) outputContainerRef.current.appendChild(pre);
+                    setIsLoading(false); setErrorMessage('');
+                }
+                return;
+            }
+
+            if (isMounted) {
+                setIsLoading(true);
+                setErrorMessage('');
+                if (outputContainerRef.current) outputContainerRef.current.innerHTML = '<p class="text-[var(--color-text-secondary)] animate-pulse">Generating diagram...</p>';
+            }
+
+            const uniqueRenderId = `${renderIdPrefix}-${Date.now()}`;
+            console.log(`[MermaidDiagramMain] Attempting to render Mermaid ID: ${uniqueRenderId}`);
+            console.log("[MermaidDiagramMain] Chart Data for this render:", JSON.stringify(currentDiagramText)); // Log the exact data being rendered
+
+            try {
+                const { svg, bindFunctions } = await mermaid.render(uniqueRenderId, currentDiagramText);
+                console.log("[MermaidDiagramMain] SVG generated by Mermaid:", svg.substring(0, 200) + "..."); // Log part of the SVG
+
+                if (isMounted && outputContainerRef.current) {
+                    outputContainerRef.current.innerHTML = svg;
+                    if (typeof bindFunctions === 'function') {
+                        bindFunctions(outputContainerRef.current);
+                    }
+                    console.log("[MermaidDiagramMain] Diagram rendered and injected successfully.");
+                    // **DEBUG: Force SVG visibility**
+                    const svgElement = outputContainerRef.current.querySelector('svg');
+                    if (svgElement) {
+                        console.log("[MermaidDiagramMain] Found SVG Element. Setting debug styles.");
+                        svgElement.style.width = '100%'; // Force width
+                        svgElement.style.height = 'auto';  // Maintain aspect ratio
+                        svgElement.style.minHeight = '300px'; // Ensure it has some height
+                        svgElement.style.border = '2px solid limegreen'; // Make it obvious
+                        svgElement.style.display = 'block'; // Ensure display is appropriate
+                        // Check its children's fill/stroke
+                        svgElement.querySelectorAll('*').forEach(el => {
+                            if (el.getAttribute('fill') === 'none' || el.getAttribute('fill') === '#fff' || el.getAttribute('fill') === 'white') {
+                                // el.setAttribute('fill', 'purple'); // TEMP DEBUG
+                            }
+                            if (!el.getAttribute('stroke') || el.getAttribute('stroke') === 'none' || el.getAttribute('stroke') === '#fff' || el.getAttribute('stroke') === 'white') {
+                                // el.setAttribute('stroke', 'orange'); // TEMP DEBUG
+                            }
+                        });
+                    } else {
+                        console.warn("[MermaidDiagramMain] No SVG element found after innerHTML injection.");
+                    }
+
+                } else if (isMounted) {
+                    console.warn("[MermaidDiagramMain] outputContainerRef became null after mermaid.render resolved, but component still mounted.");
+                    setErrorMessage("Output container disappeared during render.");
+                }
+            } catch (error) {
+                console.error("[MermaidDiagramMain] Render error:", error);
+                if (isMounted) {
+                    setErrorMessage(`Render error: ${error.message}. Check console.`);
+                    if (outputContainerRef.current) {
+                        outputContainerRef.current.innerHTML = `<pre style="color:red; white-space:pre-wrap; padding:10px; border:1px solid red;">Error: ${error.message}\n\nInput:\n${currentDiagramText.substring(0, 500)}...</pre>`;
+                    }
+                }
+            } finally {
+                if (isMounted) {
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        renderMermaidDiagramAsync();
+
+        return () => {
+            isMounted = false;
+            console.log("[MermaidDiagramMain] Cleanup effect for diagram text run.");
+        };
+    }, [currentDiagramText, renderIdPrefix]);
+
+    return (
+        <div 
+            className="mermaid-diagram-container flex flex-col justify-center items-center w-full min-h-[300px] border border-dashed p-2"
+            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-card-background)' }} // Explicitly use CSS vars
+        >
+            {isLoading && <p className="text-[var(--color-text-secondary)] animate-pulse">Generating diagram...</p>}
+            {errorMessage && !isLoading && (
+                <div className="p-2 text-red-700 dark:text-red-300 body-theme-high-contrast:text-hc-link">
+                    <p className="font-semibold">Diagram Error:</p>
+                    <pre className="text-xs whitespace-pre-wrap break-words">{errorMessage}</pre>
+                </div>
+            )}
+            {/* This div is where the SVG is injected */}
+            <div 
+                ref={outputContainerRef} 
+                className="w-full h-full flex justify-center items-center"
+                style={{ minHeight: '250px' }} // Ensure inner div also has min height
+            >
+                {/* Placeholder content if needed, managed by effect */}
+            </div>
+        </div>
+    );
 };
 
 export default MermaidDiagram;
-
-// Example Usage in a component:
-// import MermaidDiagram from './MermaidDiagram';
-//
-// const MyContentPage = ({ visualMap }) => { // visualMap = { format: 'mermaid', data: 'graph TD; A-->B;' }
-//   return (
-//     <div>
-//       <h2>Visual Map</h2>
-//       {visualMap && visualMap.data ? (
-//         <MermaidDiagram chartData={visualMap.data} diagramId={`topic-${visualMap.topicId}-map`} />
-//       ) : (
-//         <p>No visual map available.</p>
-//       )}
-//     </div>
-//   );
-// };
