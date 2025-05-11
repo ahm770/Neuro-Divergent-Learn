@@ -2,13 +2,25 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getAllContentForAdmin, deleteContent } from '../../services/contentService';
-import { useAuth } from '../../contexts/AuthContext'; // For user role check if needed, though route protects
+// Assuming useAuth is not strictly needed here if AdminRoute protects it, but good for consistency if used elsewhere.
+// import { useAuth } from '../../contexts/AuthContext';
+
+const LoadingMessage = () => <div className="p-4 text-center text-[var(--color-text-secondary)]">Loading content...</div>;
+const ErrorAlert = ({ message }) => (
+    <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700
+                   dark:bg-red-900/20 dark:border-red-700 dark:text-red-300
+                   body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link"
+    role="alert">
+        {message}
+    </div>
+);
+
 
 const AdminContentListPage = () => {
   const [contents, setContents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { token } = useAuth(); // To ensure API calls are authorized
+  // const { token } = useAuth(); // Only if directly making calls that might not pass through AdminRoute's checks
 
   const fetchContents = async () => {
     setLoading(true);
@@ -25,16 +37,15 @@ const AdminContentListPage = () => {
   };
 
   useEffect(() => {
-    if (token) { // Ensure token is available before fetching
-        fetchContents();
-    }
-  }, [token]);
+    fetchContents();
+  }, []); // Fetch on mount
 
   const handleDelete = async (contentId, topic) => {
     if (window.confirm(`Are you sure you want to delete the topic "${topic}"? This action cannot be undone.`)) {
       try {
         await deleteContent(contentId);
         setContents(prevContents => prevContents.filter(c => c._id !== contentId));
+        // Consider a more subtle success message/toast notification
         alert(`Topic "${topic}" deleted successfully.`);
       } catch (err) {
         setError(err.response?.data?.error || `Failed to delete topic "${topic}".`);
@@ -43,56 +54,58 @@ const AdminContentListPage = () => {
     }
   };
 
-  if (loading) return <div className="p-4">Loading content...</div>;
+  if (loading) return <LoadingMessage />;
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-primary">Manage Content</h1>
+    <div className="space-y-6"> {/* Add consistent spacing */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1>Manage Content</h1> {/* Uses global H1 style */}
         <Link
           to="/admin/content/create"
-          className="bg-secondary hover:bg-pink-500 text-white font-semibold py-2 px-4 rounded transition duration-200"
+          className="button-primary text-sm whitespace-nowrap" // Using generic button class
         >
           Create New Content
         </Link>
       </div>
 
-      {error && <p className="text-red-500 bg-red-100 p-3 rounded mb-4">{error}</p>}
+      {error && <ErrorAlert message={error} />}
 
       {contents.length === 0 && !loading && (
-        <p>No content found. Get started by creating some!</p>
+        <div className="card text-center py-8"> {/* Using .card class */}
+            <p className="text-[var(--color-text-secondary)]">No content found. Get started by creating some!</p>
+        </div>
       )}
 
       {contents.length > 0 && (
-        <div className="overflow-x-auto bg-white shadow-md rounded-lg">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+        <div className="card overflow-x-auto p-0 md:p-0"> {/* Remove padding for table to fit edges */}
+          <table className="min-w-full divide-y divide-[var(--color-border)]">
+            <thead className="bg-gray-100 dark:bg-slate-800 body-theme-high-contrast:bg-gray-900"> {/* Slightly different bg for thead */}
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Topic</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tags</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Topic</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Tags</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Created At</th>
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-[var(--color-border)]">
               {contents.map((content) => (
-                <tr key={content._id}>
+                <tr key={content._id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 body-theme-high-contrast:hover:bg-gray-700"> {/* Hover effect */}
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900 capitalize">{content.topic?.replace('-', ' ')}</div>
+                    <div className="text-sm font-medium text-[var(--color-text-primary)] capitalize">{content.topic?.replace('-', ' ')}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">{content.tags?.join(', ')}</div>
+                    <div className="text-sm text-[var(--color-text-secondary)]">{content.tags?.join(', ') || 'N/A'}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">{new Date(content.createdAt).toLocaleDateString()}</div>
+                    <div className="text-sm text-[var(--color-text-secondary)]">{new Date(content.createdAt).toLocaleDateString()}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <Link to={`/admin/content/edit/${content._id}`} className="text-indigo-600 hover:text-indigo-900 mr-3">
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                    <Link to={`/admin/content/edit/${content._id}`} className="text-primary dark:text-primary-light body-theme-high-contrast:text-hc-link hover:underline">
                       Edit
                     </Link>
                     <button
                       onClick={() => handleDelete(content._id, content.topic)}
-                      className="text-red-600 hover:text-red-900"
+                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 body-theme-high-contrast:text-red-400 body-theme-high-contrast:hover:text-red-300 hover:underline"
                     >
                       Delete
                     </button>

@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true },
 
-  role: { // <-- NEW FIELD
+  role: {
     type: String,
     enum: ['user', 'admin'],
     default: 'user'
@@ -16,7 +16,8 @@ const userSchema = new mongoose.Schema({
   preferences: {
     readingLevel: { type: String, default: 'basic', enum: ['basic', 'intermediate', 'advanced'] },
     fontSize: { type: String, default: 'medium', enum: ['small', 'medium', 'large', 'xlarge'] },
-    theme: { type: String, default: 'light', enum: ['light', 'dark', 'high-contrast'] },
+    theme: { type: String, default: 'light', enum: ['light', 'dark', 'high-contrast'] }, // Removed 'dyslexia' from here if it's a separate font toggle
+    dyslexiaFontEnabled: { type: Boolean, default: false }, // NEW field for dyslexia font
     preferredContentMode: { type: String, default: 'text', enum: ['text', 'video', 'visual', 'audio']},
     ttsEnabled: { type: Boolean, default: false }
   },
@@ -25,7 +26,6 @@ const userSchema = new mongoose.Schema({
 });
 
 // ... rest of the User model (pre-save hook, matchPassword method) ...
-// 🔒 Hash password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   const salt = await bcrypt.genSalt(10);
@@ -33,7 +33,6 @@ userSchema.pre('save', async function (next) {
   next();
 });
 
-// 🔐 Password check method
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };

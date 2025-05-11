@@ -1,39 +1,68 @@
 // tailwind.config.js
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: 'class', // Enables dark: variants when 'dark' class is on <html>
   content: [
     "./src/**/*.{js,jsx,ts,tsx}",
-    "./public/index.html" // Good to include this too
+    "./public/index.html"
   ],
   theme: {
     extend: {
       colors: {
         primary: {
-          light: '#A7C7E7',   // Example: A light blue - REPLACE WITH YOUR COLOR
-          DEFAULT: '#4A90E2', // Example: Your main primary blue - REPLACE WITH YOUR COLOR
-          dark: '#1C3F94',    // Example: A dark blue - REPLACE WITH YOUR COLOR
+          light: '#A7C7E7',
+          DEFAULT: '#4A90E2',
+          dark: '#1C3F94',
         },
         secondary: {
-          light: '#FFC0CB',   // Example: Light Pink - REPLACE WITH YOUR COLOR
-          DEFAULT: '#FF69B4', // Example: Hot Pink - REPLACE WITH YOUR COLOR
-          dark: '#C71585',    // Example: Medium Violet Red - REPLACE WITH YOUR COLOR
+          light: '#FFC0CB',
+          DEFAULT: '#FF69B4',
+          dark: '#C71585',
         },
-        // You can add other custom colors here if needed
-        // For example, for your theme-dark, theme-high-contrast backgrounds/text
-        'custom-dark-bg': '#1a202c',      // Example dark background
-        'custom-dark-text': '#e2e8f0',    // Example light text for dark bg
-        'custom-high-contrast-bg': '#000000',
-        'custom-high-contrast-text': '#FFFFFF',
+        'hc-text': '#FFFFFF',
+        'hc-background': '#000000',
+        'hc-link': '#FFFF00',
+        'hc-link-hover': '#FFEE00', // A slightly different shade for hover
+        'hc-border': '#FFFFFF',
+        'hc-interactive': '#FFFF00', // For buttons or active elements
+        'hc-interactive-text': '#000000', // Text on hc-interactive elements
       },
-      // If you were planning to use custom font families:
-      // fontFamily: {
-      //   'opendyslexic': ['OpenDyslexic', 'sans-serif'], // Ensure OpenDyslexic is loaded
-        // 'sans': ['Inter', 'system-ui' ] // Example custom default sans-serif
-      // },
+      fontFamily: {
+        'sans': ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', '"Noto Sans"', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"', '"Segoe UI Symbol"', '"Noto Color Emoji"'],
+        'opendyslexic': ['OpenDyslexic', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+      },
+      typography: (theme) => ({
+        DEFAULT: {
+          css: {
+            '--tw-prose-body': theme('colors.gray.700'),
+            '--tw-prose-headings': theme('colors.gray.900'),
+            '--tw-prose-links': theme('colors.primary.DEFAULT'),
+            '--tw-prose-invert-body': theme('colors.slate.300'),
+            '--tw-prose-invert-headings': theme('colors.slate.100'),
+            '--tw-prose-invert-links': theme('colors.primary.light'),
+          },
+        },
+        'high-contrast': {
+          css: {
+            '--tw-prose-body': theme('colors.hc-text'),
+            '--tw-prose-headings': theme('colors.hc-text'),
+            '--tw-prose-links': theme('colors.hc-link'),
+            '--tw-prose-bold': theme('colors.hc-text'),
+            '--tw-prose-bullets': theme('colors.hc-text'),
+            '--tw-prose-hr': theme('colors.hc-border'),
+            '--tw-prose-quotes': theme('colors.hc-text'),
+            '--tw-prose-quote-borders': theme('colors.hc-link'),
+            '--tw-prose-code': theme('colors.hc-text'),
+            '--tw-prose-pre-code': theme('colors.hc-text'),
+            '--tw-prose-pre-bg': theme('colors.gray.900'), // Keep code block bg slightly distinct
+            'img': {  border: `2px solid ${theme('colors.hc-border')}`},
+          },
+        },
+      }),
     },
   },
   plugins: [
-    require('@tailwindcss/typography'), // You need this for the 'prose' classes
-    require('@tailwindcss/forms'), // If you plan to use form styling enhancements
+    require('@tailwindcss/typography'),
+    require('@tailwindcss/forms')({ strategy: 'class' }),
   ],
-}
+};

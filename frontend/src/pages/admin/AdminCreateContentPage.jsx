@@ -3,34 +3,42 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { createContent } from '../../services/contentService';
 
-// A simple reusable form field component (optional, but can reduce repetition)
-const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder }) => (
-  <div className="mb-4">
-    <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}{required && <span className="text-red-500">*</span>}</label>
+// Reusable FormField component (can be imported from a common location if shared)
+const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder, name, rows = 3 }) => (
+  <div className="form-field-default">
+    <label htmlFor={id || name} className="form-label-default">{label}{required && <span className="text-red-500 ml-1">*</span>}</label>
     {textarea ? (
       <textarea
-        id={id}
-        name={id}
-        rows="10"
+        id={id || name}
+        name={name || id}
+        rows={rows}
         value={value}
         onChange={onChange}
         required={required}
         placeholder={placeholder}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+        className="form-input-default"
       />
     ) : (
       <input
         type={type}
-        id={id}
-        name={id}
+        id={id || name}
+        name={name || id}
         value={value}
         onChange={onChange}
         required={required}
         placeholder={placeholder}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+        className="form-input-default"
       />
     )}
   </div>
+);
+const ErrorAlert = ({ message }) => ( /* ... same as in Edit page ... */
+    <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700
+                   dark:bg-red-900/20 dark:border-red-700 dark:text-red-300
+                   body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link"
+    role="alert">
+        {message}
+    </div>
 );
 
 
@@ -38,9 +46,8 @@ const AdminCreateContentPage = () => {
   const [formData, setFormData] = useState({
     topic: '',
     originalText: '',
-    tags: '', // Comma-separated string for tags
-    imageUrls: '', // Comma-separated string for image URLs
-    // videoExplainers and audioNarrations might be handled differently in a more complex UI
+    tags: '',
+    imageUrls: '',
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -58,35 +65,40 @@ const AdminCreateContentPage = () => {
 
     const contentData = {
       ...formData,
+      topic: formData.topic.trim(),
       tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
       imageUrls: formData.imageUrls ? formData.imageUrls.split(',').map(url => url.trim()).filter(Boolean) : [],
-      // For MVP, videoExplainers and audioNarrations can be empty arrays or handled later
-      videoExplainers: [],
-      audioNarrations: [],
+      videoExplainers: [], // Initialize as empty, can be added in edit
+      audioNarrations: [], // Initialize as empty
     };
+
+    if (!contentData.topic || !contentData.originalText) {
+        setError("Topic and Original Text are required.");
+        setLoading(false);
+        return;
+    }
 
     try {
       await createContent(contentData);
-      alert('Content created successfully!');
+      alert('Content created successfully!'); // Consider a toast
       navigate('/admin/content');
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create content.');
-      console.error("Create content error:", err);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <Link to="/admin/content" className="text-primary hover:underline mb-4 inline-block">← Back to Content List</Link>
-      <h1 className="text-3xl font-bold text-primary mb-6">Create New Content</h1>
+    <div className="space-y-6">
+      <Link to="/admin/content" className="text-sm inline-block mb-2">← Back to Content List</Link>
+      <h1>Create New Content</h1>
 
-      <form onSubmit={handleSubmit} className="max-w-2xl mx-auto bg-white p-8 shadow-md rounded-lg">
-        {error && <p className="text-red-500 bg-red-100 p-3 rounded mb-4">{error}</p>}
+      <form onSubmit={handleSubmit} className="card max-w-2xl mx-auto p-6 md:p-8">
+        {error && <ErrorAlert message={error} />}
 
         <FormField
-          id="topic"
+          name="topic"
           label="Topic Title"
           value={formData.topic}
           onChange={handleChange}
@@ -94,36 +106,38 @@ const AdminCreateContentPage = () => {
           placeholder="e.g., Photosynthesis Basics"
         />
         <FormField
-          id="originalText"
+          name="originalText"
           label="Original Content Text"
           value={formData.originalText}
           onChange={handleChange}
           textarea
+          rows="10"
           required
           placeholder="Enter the full educational text here..."
         />
         <FormField
-          id="tags"
+          name="tags"
           label="Tags (comma-separated)"
           value={formData.tags}
           onChange={handleChange}
           placeholder="e.g., biology, science, plants"
         />
         <FormField
-          id="imageUrls"
+          name="imageUrls"
           label="Image URLs (comma-separated)"
           value={formData.imageUrls}
           onChange={handleChange}
-          placeholder="e.g., https://example.com/image1.jpg, https://example.com/image2.png"
+          placeholder="e.g., https://example.com/image1.jpg"
         />
 
-        {/* More complex fields for videoExplainers, audioNarrations could be added here */}
-        {/* For example, a way to add multiple URL inputs for videos */}
+        <p className="text-xs text-[var(--color-text-secondary)] mt-6 mb-2">
+            Video explainers and audio narrations can be added after creation via the "Edit Content" page.
+        </p>
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded transition duration-200 disabled:opacity-50"
+          className="button-primary w-full mt-4"
         >
           {loading ? 'Creating...' : 'Create Content'}
         </button>

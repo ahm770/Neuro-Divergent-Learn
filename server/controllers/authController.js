@@ -100,7 +100,15 @@ exports.getMe = async (req, res) => {
 exports.updatePreferences = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { readingLevel, fontSize, theme, preferredContentMode, ttsEnabled } = req.body;
+        // Destructure all expected preference fields
+        const {
+            readingLevel,
+            fontSize,
+            theme,
+            dyslexiaFontEnabled, // Added
+            preferredContentMode,
+            ttsEnabled
+        } = req.body;
 
         const user = await User.findById(userId);
         if (!user) {
@@ -117,6 +125,9 @@ exports.updatePreferences = async (req, res) => {
         if (theme && ['light', 'dark', 'high-contrast'].includes(theme)) {
             user.preferences.theme = theme;
         }
+        if (typeof dyslexiaFontEnabled === 'boolean') { // Added
+            user.preferences.dyslexiaFontEnabled = dyslexiaFontEnabled;
+        }
         if (preferredContentMode && ['text', 'video', 'visual', 'audio'].includes(preferredContentMode)) {
             user.preferences.preferredContentMode = preferredContentMode;
         }
@@ -127,7 +138,7 @@ exports.updatePreferences = async (req, res) => {
         await user.save();
         res.json({
             message: 'Preferences updated successfully',
-            preferences: user.preferences
+            preferences: user.preferences // Send back the full updated preferences object
         });
 
     } catch (err) {

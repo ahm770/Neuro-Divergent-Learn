@@ -1,6 +1,193 @@
 /* src/index.css */
- 
-  @tailwind base;
-  @tailwind components;
-  @tailwind utilities;
-  
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* FONT DEFINITIONS */
+@font-face {
+  font-family: 'OpenDyslexic';
+  src: url('/src/fonts/opendyslexic/OpenDyslexic-Regular.otf') format('opentype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* If you self-host Inter or use another default font not covered by Tailwind's stack */
+/* Example: @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap'); */
+
+/* BASE STYLES & CSS VARIABLES */
+@layer base {
+  html {
+    font-size: 16px; /* Default base font size */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    @apply font-sans; /* From tailwind.config.js */
+    scroll-behavior: smooth;
+  }
+
+  /* Font size classes to be applied to <html> based on user preference */
+  html.font-size-small { font-size: 14px; }
+  html.font-size-medium { font-size: 16px; }
+  html.font-size-large { font-size: 18px; }
+  html.font-size-xlarge { font-size: 20px; }
+
+  body {
+    /* Default Theme (Light) Variables */
+    --color-background: theme('colors.white');
+    --color-text-primary: theme('colors.gray.800');
+    --color-text-secondary: theme('colors.gray.600');
+    --color-link: theme('colors.primary.DEFAULT');
+    --color-link-hover: theme('colors.primary.dark');
+    --color-border: theme('colors.gray.300');
+    --color-border-input: theme('colors.gray.300');
+    --color-focus-ring: theme('colors.primary.DEFAULT');
+    --color-card-background: theme('colors.white');
+    --color-button-primary-bg: theme('colors.primary.DEFAULT');
+    --color-button-primary-text: theme('colors.white');
+    --color-button-primary-hover-bg: theme('colors.primary.dark');
+    --color-button-secondary-bg: theme('colors.gray.200');
+    --color-button-secondary-text: theme('colors.gray.800');
+    --color-button-secondary-hover-bg: theme('colors.gray.300');
+
+
+    @apply bg-[var(--color-background)] text-[var(--color-text-primary)] transition-colors duration-200 ease-in-out;
+  }
+
+  /* Dark Theme Variables */
+  html.dark body {
+    --color-background: theme('colors.slate.900');
+    --color-text-primary: theme('colors.slate.100');
+    --color-text-secondary: theme('colors.slate.300');
+    --color-link: theme('colors.primary.light');
+    --color-link-hover: theme('colors.primary.DEFAULT');
+    --color-border: theme('colors.slate.700');
+    --color-border-input: theme('colors.slate.600');
+    --color-focus-ring: theme('colors.primary.light');
+    --color-card-background: theme('colors.slate.800');
+    --color-button-primary-bg: theme('colors.primary.light');
+    --color-button-primary-text: theme('colors.slate.900');
+    --color-button-primary-hover-bg: theme('colors.primary.DEFAULT');
+    --color-button-secondary-bg: theme('colors.slate.700');
+    --color-button-secondary-text: theme('colors.slate.100');
+    --color-button-secondary-hover-bg: theme('colors.slate.600');
+  }
+
+  /* High-Contrast Theme Variables */
+  body.theme-high-contrast {
+    --color-background: theme('colors.hc-background');
+    --color-text-primary: theme('colors.hc-text');
+    --color-text-secondary: theme('colors.hc-text');
+    --color-link: theme('colors.hc-link');
+    --color-link-hover: theme('colors.hc-link-hover');
+    --color-border: theme('colors.hc-border');
+    --color-border-input: theme('colors.hc-border');
+    --color-focus-ring: theme('colors.hc-link');
+    --color-card-background: theme('colors.hc-background');
+    --color-button-primary-bg: theme('colors.hc-link');
+    --color-button-primary-text: theme('colors.hc-background');
+    --color-button-primary-hover-bg: theme('colors.hc-link-hover');
+    --color-button-secondary-bg: theme('colors.hc-background');
+    --color-button-secondary-text: theme('colors.hc-text');
+    --color-button-secondary-hover-bg: theme('colors.gray.800'); /* Darken bg slightly */
+
+    /* Ensure form elements are also high contrast, if not using form-* classes exclusively */
+    input:not([type='checkbox']):not([type='radio']), textarea, select {
+      background-color: var(--color-background) !important;
+      color: var(--color-text-primary) !important;
+      border: 2px solid var(--color-border-input) !important;
+    }
+     input::placeholder, textarea::placeholder {
+      color: var(--color-text-secondary) !important; /* Make placeholder visible */
+      opacity: 0.8 !important;
+    }
+    /* Adjustments for @tailwindcss/forms classes in high contrast */
+    .form-input, .form-textarea, .form-select, .form-multiselect {
+        background-color: var(--color-background);
+        border-color: var(--color-border-input);
+        color: var(--color-text-primary);
+    }
+    .form-input:focus, .form-textarea:focus, .form-select:focus, .form-multiselect:focus {
+        --tw-ring-color: var(--color-focus-ring);
+        border-color: var(--color-focus-ring);
+    }
+    .form-checkbox, .form-radio {
+        color: var(--color-link); /* Checkbox/radio color */
+        border-color: var(--color-border-input);
+    }
+     .form-checkbox:focus, .form-radio:focus {
+         --tw-ring-color: var(--color-focus-ring);
+     }
+  }
+
+  /* Dyslexia-Friendly Font */
+  body.font-dyslexic {
+    @apply font-opendyslexic;
+  }
+
+  /* GLOBAL ELEMENT STYLES USING CSS VARIABLES */
+  a {
+    @apply text-[var(--color-link)] no-underline hover:underline hover:text-[var(--color-link-hover)] focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-focus-ring)];
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply text-[var(--color-text-primary)] font-semibold; /* Example: add font-semibold */
+  }
+  h1 { @apply text-3xl md:text-4xl mb-4; }
+  h2 { @apply text-2xl md:text-3xl mb-3; }
+  h3 { @apply text-xl md:text-2xl mb-2; }
+
+
+  p {
+    @apply text-[var(--color-text-primary)] leading-relaxed mb-4;
+  }
+
+  hr {
+    @apply border-t border-[var(--color-border)] my-6;
+  }
+
+  /* Basic focus visible styling for all interactive elements */
+  *:focus-visible {
+    @apply outline-none ring-2 ring-offset-2 ring-[var(--color-focus-ring)] ring-offset-[var(--color-background)];
+  }
+}
+
+/* GENERIC COMPONENT CLASSES (using CSS Variables and Tailwind @apply) */
+@layer components {
+  .card {
+    @apply bg-[var(--color-card-background)] border border-[var(--color-border)] rounded-lg shadow-md p-4 md:p-6;
+  }
+
+  .button { /* Base button style */
+    @apply px-4 py-2 rounded font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus-ring)] disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-150;
+  }
+  .button-primary {
+    @apply button bg-[var(--color-button-primary-bg)] text-[var(--color-button-primary-text)] hover:bg-[var(--color-button-primary-hover-bg)];
+  }
+  .button-secondary {
+    @apply button bg-[var(--color-button-secondary-bg)] text-[var(--color-button-secondary-text)] hover:bg-[var(--color-button-secondary-hover-bg)] border border-[var(--color-border)];
+  }
+  body.theme-high-contrast .button-secondary { /* Specific override for HC secondary button */
+     @apply border-[var(--color-hc-border)];
+  }
+
+
+  /* Form input styling using @tailwindcss/forms 'class' strategy */
+  .form-field-default { /* A wrapper for a label and an input */
+    @apply mb-4;
+  }
+  .form-label-default {
+    @apply block text-sm font-medium text-[var(--color-text-secondary)] mb-1;
+  }
+  .form-input-default { /* Class to apply to input, textarea, select */
+    @apply block w-full form-input px-3 py-2 border rounded-md shadow-sm
+           border-[var(--color-border-input)] bg-[var(--color-background)] text-[var(--color-text-primary)]
+           focus:border-[var(--color-focus-ring)] focus:ring-1 focus:ring-[var(--color-focus-ring)];
+  }
+  .form-checkbox-default { /* Class to apply to checkboxes */
+    @apply form-checkbox h-4 w-4 rounded border-[var(--color-border-input)] text-primary focus:ring-primary;
+    /* Note: High-contrast checkbox might need more specific SVG or background-image work if default theming isn't enough */
+  }
+  body.theme-high-contrast .form-checkbox-default {
+    @apply text-[var(--color-link)] border-[var(--color-hc-border)];
+  }
+}

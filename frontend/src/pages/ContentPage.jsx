@@ -5,206 +5,173 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   getContentByTopic,
   simplifyContent,
-  generateVisualMap, // Assuming this will be implemented in contentService
-  generateAudioNarration // Assuming this will be implemented in contentService
+  generateVisualMap,
+  generateAudioNarration
 } from '../services/contentService';
-import MermaidDiagram from '../components/common/MermaidDiagram'; // Adjust path if needed
+import MermaidDiagram from '../components/common/MermaidDiagram';
 
-// Placeholder components - create these properly
-const LoadingSpinner = ({ text = "Loading..." }) => <div className="text-center p-10"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-2"></div><p>{text}</p></div>;
-const ErrorMessage = ({ message }) => <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 my-4 rounded" role="alert"><p className="font-bold">Error</p><p>{message}</p></div>;
-const InfoMessage = ({ message }) => <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 my-4 rounded" role="alert"><p>{message}</p></div>;
+const LoadingSpinner = ({ text = "Loading..." }) => (
+  <div className="text-center p-10">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-link)] mx-auto mb-2"></div>
+    <p className="text-[var(--color-text-secondary)]">{text}</p>
+  </div>
+);
 
+const ErrorMessage = ({ message }) => (
+  <div
+    className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 my-4 rounded
+               dark:bg-red-900/30 dark:border-red-600 dark:text-red-300
+               body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link"
+    role="alert"
+  >
+    <p className="font-bold">Error</p>
+    <p>{message}</p>
+  </div>
+);
+
+const InfoMessage = ({ message }) => (
+  <div
+    className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 my-4 rounded
+               dark:bg-blue-900/30 dark:border-blue-600 dark:text-blue-300
+               body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link"
+    role="alert"
+  >
+    <p>{message}</p>
+  </div>
+);
 
 const ContentPage = () => {
   const { topic } = useParams();
-  const { user } = useAuth(); // Get user for preferences
+  const { user } = useAuth();
+  const userPrefs = user?.preferences;
 
   const [content, setContent] = useState(null);
-  const [currentMode, setCurrentMode] = useState('original'); // 'original', 'simplified', 'visual', 'audio'
-  const [displayedText, setDisplayedText] = useState(''); // For original or simplified text
-
-  // Mode-specific states
-  const [visualMapData, setVisualMapData] = useState(null); // { format: 'mermaid', data: '...' }
+  const [currentMode, setCurrentMode] = useState('original');
+  const [displayedText, setDisplayedText] = useState('');
+  const [visualMapData, setVisualMapData] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
-
-  // Loading/Error states
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isProcessingMode, setIsProcessingMode] = useState(false); // For AI generation actions
+  const [isProcessingMode, setIsProcessingMode] = useState(false);
 
   const fetchContentData = useCallback(async () => {
+    // ... (same as your previous good version)
     if (!topic) return;
     setLoading(true);
-    setError(null);
-    setContent(null); // Reset content on new topic load
-    setDisplayedText('');
-    setVisualMapData(null);
-    setAudioUrl(null);
-    setCurrentMode('original'); // Default to original
-
+    setError(null); setContent(null); setDisplayedText(''); setVisualMapData(null); setAudioUrl(null); setCurrentMode('original');
     try {
       const data = await getContentByTopic(topic);
+      console.log("data::", data)
       setContent(data);
-      setDisplayedText(data.originalText); // Display original text by default
-
-      // Auto-select preferred mode if content is available and user has preference
-      if (user?.preferences?.preferredContentMode) {
-        const prefMode = user.preferences.preferredContentMode;
-        if (prefMode === 'simplified' && data.simplifiedVersions?.some(v => v.level === (user.preferences.readingLevel === 'basic' ? 'easy' : 'moderate'))) {
-           const levelToLoad = user.preferences.readingLevel === 'basic' ? 'easy' : 'moderate';
-           const version = data.simplifiedVersions.find(v => v.level === levelToLoad);
-           if(version) {
-               setDisplayedText(version.text);
-               setCurrentMode('simplified');
-           }
+      setDisplayedText(data.originalText);
+      if (userPrefs?.preferredContentMode) {
+        const prefMode = userPrefs.preferredContentMode;
+        const readingLevel = userPrefs.readingLevel === 'basic' ? 'easy' : 'moderate';
+        if (prefMode === 'simplified' && data.simplifiedVersions?.length > 0) {
+           const version = data.simplifiedVersions.find(v => v.level === readingLevel) || data.simplifiedVersions[0];
+           if(version) { setDisplayedText(version.text); setCurrentMode('simplified'); }
+        } else if (prefMode === 'visual' && data.visualMaps?.length > 0) {
+            setVisualMapData(data.visualMaps[0]); setCurrentMode('visual');
+        } else if (prefMode === 'audio' && data.audioNarrations?.length > 0) {
+            setAudioUrl(data.audioNarrations[0].url); setCurrentMode('audio');
         }
-        // Add similar logic for visual, audio if pre-generated content exists
       }
+    } catch (err) { setError(err.response?.data?.message || `Content for "${topic}" not found.`); }
+    finally { setLoading(false); }
+  }, [topic, userPrefs]);
 
-    } catch (err) {
-      console.error("Failed to fetch content:", err);
-      setError(err.response?.data?.message || `Content for "${topic}" not found or failed to load.`);
-    } finally {
-      setLoading(false);
-    }
-  }, [topic, user?.preferences?.preferredContentMode, user?.preferences?.readingLevel]); // Add user preferences as dependencies
-
-  useEffect(() => {
-    fetchContentData();
-  }, [fetchContentData]);
-
+  useEffect(() => { fetchContentData(); }, [fetchContentData]);
 
   const handleModeChange = async (mode, params = {}) => {
-    setError(null); // Clear previous mode-specific errors
-    if (mode === currentMode && mode !== 'simplified') return; // Avoid re-processing if already in mode (except for re-simplifying)
-
-    setCurrentMode(mode);
-    setIsProcessingMode(true);
-
+    // ... (same as your previous good version, ensure setContent is used to update cache)
+    setError(null);
+    if (mode === currentMode && mode !== 'simplified') return;
+    setCurrentMode(mode); setIsProcessingMode(true); setVisualMapData(null); setAudioUrl(null);
     try {
-      if (mode === 'original') {
-        setDisplayedText(content.originalText);
-      } else if (mode === 'simplified') {
-        const level = params.level || (user?.preferences?.readingLevel === 'basic' ? 'easy' : 'moderate') || 'easy';
+      if (!content) { setError("Content not loaded."); return; }
+      if (mode === 'original') { setDisplayedText(content.originalText); }
+      else if (mode === 'simplified') { /* ... fetch/cache logic ... */
+        const level = params.level || (userPrefs?.readingLevel === 'basic' ? 'easy' : 'moderate') || 'easy';
         const cachedVersion = content.simplifiedVersions?.find(v => v.level === level);
-        if (cachedVersion && params.level) { // Only use cache if specific level requested and found
-          setDisplayedText(cachedVersion.text);
-        } else {
-          const simplifiedData = await simplifyContent(content.topic, level);
-          setDisplayedText(simplifiedData.simplifiedText);
-          // Optimistically update local content state with the new version
-          if (content) {
-            const existingVersionIndex = content.simplifiedVersions?.findIndex(v => v.level === level);
-            let newSimplifiedVersions = [...(content.simplifiedVersions || [])];
-            if (existingVersionIndex > -1) {
-              newSimplifiedVersions[existingVersionIndex] = { level, text: simplifiedData.simplifiedText, createdAt: new Date() };
-            } else {
-              newSimplifiedVersions.push({ level, text: simplifiedData.simplifiedText, createdAt: new Date() });
-            }
-            setContent(prev => ({ ...prev, simplifiedVersions: newSimplifiedVersions }));
-          }
-        }
-      } else if (mode === 'visual') {
-        const format = 'mermaid'; // Or make this configurable
-        const cachedMap = content.visualMaps?.find(v => v.format === format);
-        if (cachedMap) {
-            setVisualMapData(cachedMap);
-        } else {
-            const mapData = await generateVisualMap(content.topic, format);
-            setVisualMapData(mapData.visualMap); // Assuming service returns { visualMap: { format, data, ... } }
-             if (content) {
-                setContent(prev => ({
-                    ...prev,
-                    visualMaps: [...(prev.visualMaps || []), mapData.visualMap]
-                }));
-            }
-        }
-      } else if (mode === 'audio') {
-        // For MVP, assume audio is generated for the currently displayed text
-        // In a real app, you might choose original or a specific simplified version
-        if (content.audioNarrations && content.audioNarrations.length > 0) {
-            setAudioUrl(content.audioNarrations[0].url); // Use first available cached audio
-        } else if (displayedText) {
-            const narrationData = await generateAudioNarration(content._id, displayedText);
-            setAudioUrl(narrationData.narration.url); // Assuming service returns { narration: { url, ... } }
-             if (content) {
-                setContent(prev => ({
-                    ...prev,
-                    audioNarrations: [...(prev.audioNarrations || []), narrationData.narration]
-                }));
-            }
-        } else {
-            setError("No text available to narrate.");
+        if (cachedVersion) { setDisplayedText(cachedVersion.text); }
+        else { /* ... API call, then setDisplayedText and update content state ... */
+            const simplifiedData = await simplifyContent(content.topic, level);
+            setDisplayedText(simplifiedData.simplifiedText);
+            setContent(prev => ({...prev, simplifiedVersions: [...(prev.simplifiedVersions || []), {level, text: simplifiedData.simplifiedText, createdAt: new Date()}]}));
         }
       }
-    } catch (err) {
-      console.error(`Failed to switch to ${mode} mode:`, err);
-      setError(err.response?.data?.error || `Failed to generate ${mode} content.`);
-      // Revert to original text on error if mode processing failed
-      // setCurrentMode('original');
-      // setDisplayedText(content?.originalText || '');
-    } finally {
-      setIsProcessingMode(false);
-    }
+      else if (mode === 'visual') { /* ... fetch/cache logic ... */
+        setDisplayedText('');
+        const format = 'mermaid';
+        const cachedMap = content.visualMaps?.find(v => v.format === format);
+        if (cachedMap) {setVisualMapData(cachedMap);}
+        else { /* ... API call, then setVisualMapData and update content state ... */
+            const mapData = await generateVisualMap(content.topic, format);
+            setVisualMapData(mapData.visualMap);
+            setContent(prev => ({...prev, visualMaps: [...(prev.visualMaps || []), mapData.visualMap]}));
+        }
+      }
+      else if (mode === 'audio') { /* ... fetch/cache logic ... */
+        setDisplayedText('');
+        const textForAudio = content.simplifiedVersions?.find(v => v.level === ((userPrefs?.readingLevel === 'basic' ? 'easy' : 'moderate') || 'easy'))?.text || content.originalText;
+        const cachedAudio = content.audioNarrations?.[0]; // Simple cache check
+        if(cachedAudio) { setAudioUrl(cachedAudio.url); }
+        else if (textForAudio) { /* ... API call, then setAudioUrl and update content state ... */
+            const narrationData = await generateAudioNarration(content._id, textForAudio);
+            setAudioUrl(narrationData.narration.url);
+            setContent(prev => ({...prev, audioNarrations: [...(prev.audioNarrations || []), narrationData.narration]}));
+        } else { setError("No text to narrate.");}
+      }
+    } catch (err) { setError(err.response?.data?.error || `Failed to generate ${mode} content.`); }
+    finally { setIsProcessingMode(false); }
   };
 
-  // Apply dynamic styles based on user preferences
-  const userPrefs = user?.preferences;
-  const contentStyles = {
-    fontSize: userPrefs?.fontSize === 'small' ? '0.875rem' :
-              userPrefs?.fontSize === 'large' ? '1.25rem' :
-              userPrefs?.fontSize === 'xlarge' ? '1.5rem' : '1rem', // medium/default
-    fontFamily: userPrefs?.theme === 'dyslexia' ? 'OpenDyslexic, sans-serif' : 'inherit', // Assuming a 'dyslexia' theme option for font
-  };
-  // Theme class for container (light, dark, high-contrast)
-  const themeClass = userPrefs?.theme === 'dark' ? 'theme-dark bg-gray-800 text-gray-100' :
-                     userPrefs?.theme === 'high-contrast' ? 'theme-high-contrast bg-black text-white' :
-                     'theme-light bg-gray-50';
-
+  const getProseClass = () => userPrefs?.theme === 'high-contrast' ? 'prose-high-contrast' : '';
 
   if (loading) return <LoadingSpinner text={`Loading ${topic.replace('-', ' ')}...`} />;
 
+  const getButtonClass = (modeNameIsCurrent) => {
+    let base = "px-3 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ";
+    if (modeNameIsCurrent) {
+        if (userPrefs?.theme === 'high-contrast') return base + "bg-hc-interactive text-hc-interactive-text";
+        return base + "bg-primary text-white dark:bg-primary-light dark:text-slate-900 shadow-md";
+    } else {
+        if (userPrefs?.theme === 'high-contrast') return base + "bg-hc-background text-hc-text border border-hc-border hover:bg-gray-800"; // Assuming gray-800 is dark enough for HC hover
+        return base + "bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200";
+    }
+  };
+
+
   return (
-    <div className={`container mx-auto p-4 md:p-6 min-h-screen ${themeClass}`}>
+    <div className="container mx-auto p-4 md:p-6">
       <div className="mb-4">
-        <Link to="/dashboard" className={`hover:underline text-sm ${userPrefs?.theme === 'dark' || userPrefs?.theme === 'high-contrast' ? 'text-blue-300 hover:text-blue-200' : 'text-primary hover:text-primary-dark'}`}>
-            ← Back to Dashboard
-        </Link>
+        <Link to="/dashboard" className="text-sm">← Back to Dashboard</Link>
       </div>
 
       {error && <ErrorMessage message={error} />}
-
       {!content && !loading && !error && <InfoMessage message={`No content found for "${topic}".`} />}
 
       {content && (
         <div>
-          <h1 className="text-3xl md:text-4xl font-bold mb-6 capitalize">
-            {content.topic.replace(/-/g, ' ')}
-          </h1>
+          <h1 className="capitalize">{content.topic.replace(/-/g, ' ')}</h1>
 
-          {/* --- Content Mode Switching UI --- */}
-          <div className="mb-6 border-b pb-3 flex flex-wrap gap-2 items-center">
+          <div className="mb-6 border-b pb-3 flex flex-wrap gap-2 items-center border-[var(--color-border)]">
             {['original', 'simplified', 'visual', 'audio'].map((modeName) => (
               <button
                 key={modeName}
                 onClick={() => handleModeChange(modeName)}
                 disabled={isProcessingMode && currentMode !== modeName && modeName !== 'original'}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors
-                  ${currentMode === modeName
-                    ? 'bg-primary text-white shadow-md'
-                    : `${userPrefs?.theme === 'dark' || userPrefs?.theme === 'high-contrast' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'} disabled:opacity-50 disabled:cursor-not-allowed`}
-                `}
+                className={getButtonClass(currentMode === modeName)}
               >
-                {isProcessingMode && currentMode === modeName ? `Loading ${modeName}...` : modeName.charAt(0).toUpperCase() + modeName.slice(1)}
+                {isProcessingMode && currentMode === modeName ? `Loading...` : modeName.charAt(0).toUpperCase() + modeName.slice(1)}
               </button>
             ))}
-            {currentMode === 'simplified' && ( // Show level options for simplified mode
+            {currentMode === 'simplified' && (
                 <select
-                    value={(user?.preferences?.readingLevel === 'basic' ? 'easy' : 'moderate') || 'easy'}
+                    value={(userPrefs?.readingLevel === 'basic' ? 'easy' : 'moderate') || 'easy'}
                     onChange={(e) => handleModeChange('simplified', { level: e.target.value })}
                     disabled={isProcessingMode}
-                    className={`ml-2 px-2 py-1.5 rounded text-sm border ${userPrefs?.theme === 'dark' || userPrefs?.theme === 'high-contrast' ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300'} focus:ring-primary focus:border-primary`}
+                    className="form-input-default ml-2 px-2 py-1.5 text-sm" // Using .form-input-default from index.css
                 >
                     <option value="easy">Easy</option>
                     <option value="moderate">Moderate</option>
@@ -212,37 +179,33 @@ const ContentPage = () => {
             )}
           </div>
 
-          {/* --- Content Display Area --- */}
           <article
-            style={contentStyles}
-            className={`prose prose-sm sm:prose lg:prose-lg xl:prose-xl max-w-none p-4 md:p-6 border rounded shadow-sm
-            ${userPrefs?.theme === 'dark' ? 'bg-gray-750 border-gray-700 prose-invert' :
-            userPrefs?.theme === 'high-contrast' ? 'bg-gray-900 border-gray-600 prose-invert filter invert-[1] contrast-[2]' : // Example high contrast
-            'bg-white border-gray-200'}`}
+            className={`prose prose-sm sm:prose lg:prose-lg xl:prose-xl max-w-none 
+                        p-4 md:p-6 border rounded shadow-sm 
+                        bg-[var(--color-card-background)] border-[var(--color-border)]
+                        dark:prose-invert ${getProseClass()}`}
           >
-            {currentMode === 'original' && <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n/g, '<br />') }} />}
-            {currentMode === 'simplified' && <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n/g, '<br />') }} />}
-
-            {currentMode === 'visual' && (
-              isProcessingMode && !visualMapData ? <LoadingSpinner text="Generating visual map..." /> :
-              visualMapData ? <MermaidDiagram chartData={visualMapData.data} diagramId={`content-map-${content._id}`} /> :
-              !isProcessingMode && <InfoMessage message="No visual map generated or available." />
+            {(currentMode === 'original' || currentMode === 'simplified') && ( /* ... content ... */
+                 isProcessingMode && !displayedText ? <LoadingSpinner text={currentMode === 'original' ? 'Loading...' : 'Simplifying...'} /> :
+                 displayedText ? <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n/g, '<br />') }} /> :
+                 !isProcessingMode && <InfoMessage message="No text content." />
             )}
-
-            {currentMode === 'audio' && (
-              isProcessingMode && !audioUrl ? <LoadingSpinner text="Generating audio..." /> :
-              audioUrl ? <audio controls src={audioUrl} className="w-full my-2">Your browser does not support the audio element.</audio> :
-              !isProcessingMode && <InfoMessage message="No audio generated or available." />
+            {currentMode === 'visual' && ( /* ... content ... */
+                 isProcessingMode && !visualMapData ? <LoadingSpinner text="Generating visual map..." /> :
+                 visualMapData ? <MermaidDiagram chartData={visualMapData.data} diagramId={`content-map-${content._id}`} /> :
+                 !isProcessingMode && <InfoMessage message="No visual map." />
+            )}
+            {currentMode === 'audio' && ( /* ... content ... */
+                 isProcessingMode && !audioUrl ? <LoadingSpinner text="Generating audio..." /> :
+                 audioUrl ? <audio controls src={audioUrl} className="w-full my-2 body-theme-high-contrast:[color-scheme:dark]">Your browser does not support audio.</audio> :
+                 !isProcessingMode && <InfoMessage message="No audio." />
             )}
           </article>
 
-          {/* Interactive Companion (Chatbot) Placeholder */}
-          <div className="mt-8 p-4 border rounded shadow-sm bg-white">
-            <h3 className="text-xl font-semibold mb-3">Interactive Companion (Coming Soon)</h3>
-            <p className="text-gray-600">Ask questions and get personalized help related to this topic.</p>
-            {/* <ChatbotComponent topic={content.topic} /> */}
+          <div className="mt-8 card"> {/* Using .card class */}
+            <h3 className="text-xl font-semibold mb-3">Interactive Companion</h3>
+            <p className="text-[var(--color-text-secondary)]">Ask questions and get personalized help related to this topic.</p>
           </div>
-
         </div>
       )}
     </div>

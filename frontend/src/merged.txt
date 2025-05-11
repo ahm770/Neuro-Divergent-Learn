@@ -3,7 +3,7 @@
 // src/App.jsx
 import React from 'react';
 import { Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { useAuth } from './contexts/AuthContext';
+ 
 
 // Import Pages (Create these basic files next)
 import LoginPage from './pages/LoginPage';
@@ -11,6 +11,11 @@ import SignupPage from './pages/SignupPage';
 import DashboardPage from './pages/DashboardPage'; // Example protected page
 import ContentPage from './pages/ContentPage'; // Example protected page
 import HomePage from './pages/HomePage'; // Public landing page
+import AdminRoute from './components/common/AdminRoute';
+import AdminDashboardPage from './pages/admin/AdminDashboardPage'; // Create this
+import AdminContentListPage from './pages/admin/AdminContentListPage'; // Create this
+import AdminCreateContentPage from './pages/admin/AdminCreateContentPage'; // Create this
+import AdminEditContentPage from './pages/admin/AdminEditContentPage'; // Create this
 
 // Import Components
 import ProtectedRoute from './components/common/ProtectedRoute';
@@ -34,6 +39,13 @@ function App() {
              <Route path="/content/:topic" element={<ContentPage />} />
              {/* Add other protected routes here */}
           </Route>
+          <Route element={<AdminRoute />}>
+  <Route path="/admin" element={<AdminDashboardPage />} />
+  <Route path="/admin/content" element={<AdminContentListPage />} />
+  <Route path="/admin/content/create" element={<AdminCreateContentPage />} />
+  <Route path="/admin/content/edit/:contentId" element={<AdminEditContentPage />} />
+  {/* Add more admin routes as needed */}
+</Route>
 
           {/* Catch-all/Not Found Route */}
           <Route path="*" element={<div><h2>404 Not Found</h2><Link to="/">Go Home</Link></div>} />
@@ -61,22 +73,41 @@ test('renders learn react link', () => {
 
 ===== File: /src/components/UserProfile.jsx =====
 // src/components/UserProfile.jsx
-import React, { useContext, useState } from 'react';
-import { UserContext } from '../context/UserContext'; // Adjust path
+import React, { useState, useEffect } from 'react'; // Added useEffect
+import { useAuth } from '../contexts/AuthContext'; // Changed to useAuth
 
 const UserProfile = () => {
-  const { user, updateUserPreferences, loading, error } = useContext(UserContext);
-  const [prefs, setPrefs] = useState(user?.preferences || {});
+  // Destructure what you need from the unified AuthContext
+  const { user, updateUserPreferences, loading: authLoading, error: authError } = useAuth();
+  const [prefs, setPrefs] = useState({});
   const [message, setMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false); // Local loading state for the save button
 
   useEffect(() => {
-    if (user) {
+    // Initialize prefs from user object when user data is available or changes
+    if (user && user.preferences) {
       setPrefs(user.preferences);
+    } else {
+      // Set default or empty if no user/preferences (e.g., during initial load)
+      setPrefs({
+        readingLevel: 'basic',
+        fontSize: 'medium',
+        theme: 'light',
+        preferredContentMode: 'text',
+        ttsEnabled: false,
+      });
     }
-  }, [user]);
+  }, [user]); // Re-run if user object changes
 
-  if (loading && !user) return <p>Loading profile...</p>;
-  if (!user) return <p>Please log in to view your profile.</p>;
+  if (authLoading && !user) return <p>Loading profile...</p>; // Show loading if user is not yet fetched
+
+  if (!user) return (
+    <div>
+        <p>Please log in to view or update your profile and preferences.</p>
+        {authError && <p style={{ color: 'red' }}>Error: {authError}</p>}
+    </div>
+  );
+
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -89,35 +120,41 @@ const UserProfile = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
+    setIsSaving(true);
     try {
       await updateUserPreferences(prefs);
       setMessage('Preferences updated successfully!');
     } catch (updateError) {
-      setMessage(`Error: ${updateError.message || 'Failed to update.'}`);
+      setMessage(`Error: ${updateError.message || 'Failed to update preferences.'}`);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
-    <div>
-      <h1>User Profile</h1>
-      <p>Email: {user.email}</p>
-      <p>Name: {user.name || 'N/A'}</p>
-      {error && <p style={{ color: 'red' }}>Context Error: {error}</p>}
-      {message && <p style={{ color: message.startsWith('Error:') ? 'red' : 'green' }}>{message}</p>}
+    <div className="max-w-lg mx-auto p-6 bg-white shadow-md rounded-lg">
+      <h1 className="text-2xl font-semibold text-primary mb-6">User Profile & Preferences</h1>
+      <div className="mb-4">
+        <p><span className="font-semibold">Email:</span> {user.email}</p>
+        <p><span className="font-semibold">Name:</span> {user.name || 'N/A'}</p>
+      </div>
 
-      <form onSubmit={handleSubmit}>
-        <h2>Preferences</h2>
+      {authError && !message && <p className="text-sm text-red-600 bg-red-100 p-2 rounded mb-4">Context Error: {authError}</p>}
+      {message && <p className={`text-sm p-2 rounded mb-4 ${message.startsWith('Error:') ? 'text-red-600 bg-red-100' : 'text-green-600 bg-green-100'}`}>{message}</p>}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <h2 className="text-xl font-medium text-gray-700 mb-3">Your Preferences</h2>
         <div>
-          <label htmlFor="readingLevel">Reading Level:</label>
-          <select name="readingLevel" id="readingLevel" value={prefs.readingLevel || 'basic'} onChange={handleChange}>
+          <label htmlFor="readingLevel" className="block text-sm font-medium text-gray-700">Reading Level:</label>
+          <select name="readingLevel" id="readingLevel" value={prefs.readingLevel || 'basic'} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md">
             <option value="basic">Basic</option>
             <option value="intermediate">Intermediate</option>
             <option value="advanced">Advanced</option>
           </select>
         </div>
         <div>
-          <label htmlFor="fontSize">Font Size:</label>
-          <select name="fontSize" id="fontSize" value={prefs.fontSize || 'medium'} onChange={handleChange}>
+          <label htmlFor="fontSize" className="block text-sm font-medium text-gray-700">Font Size:</label>
+          <select name="fontSize" id="fontSize" value={prefs.fontSize || 'medium'} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md">
             <option value="small">Small</option>
             <option value="medium">Medium</option>
             <option value="large">Large</option>
@@ -125,30 +162,34 @@ const UserProfile = () => {
           </select>
         </div>
         <div>
-          <label htmlFor="theme">Theme:</label>
-          <select name="theme" id="theme" value={prefs.theme || 'light'} onChange={handleChange}>
+          <label htmlFor="theme" className="block text-sm font-medium text-gray-700">Theme:</label>
+          <select name="theme" id="theme" value={prefs.theme || 'light'} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md">
             <option value="light">Light</option>
             <option value="dark">Dark</option>
             <option value="high-contrast">High Contrast</option>
           </select>
         </div>
         <div>
-          <label htmlFor="preferredContentMode">Preferred Content Mode:</label>
-          <select name="preferredContentMode" id="preferredContentMode" value={prefs.preferredContentMode || 'text'} onChange={handleChange}>
+          <label htmlFor="preferredContentMode" className="block text-sm font-medium text-gray-700">Preferred Content Mode:</label>
+          <select name="preferredContentMode" id="preferredContentMode" value={prefs.preferredContentMode || 'text'} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md">
             <option value="text">Text</option>
             <option value="video">Video</option>
             <option value="visual">Visual Map</option>
             <option value="audio">Audio</option>
           </select>
         </div>
-        <div>
-          <label>
-            <input type="checkbox" name="ttsEnabled" checked={prefs.ttsEnabled || false} onChange={handleChange} />
+        <div className="flex items-center">
+          <input type="checkbox" name="ttsEnabled" id="ttsEnabled" checked={prefs.ttsEnabled || false} onChange={handleChange} className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-primary" />
+          <label htmlFor="ttsEnabled" className="ml-2 block text-sm text-gray-900">
             Enable Text-to-Speech
           </label>
         </div>
-        <button type="submit" disabled={loading}>
-          {loading ? 'Saving...' : 'Save Preferences'}
+        <button
+          type="submit"
+          disabled={isSaving || authLoading} // Disable if saving or context is busy with auth stuff
+          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-dark disabled:opacity-50"
+        >
+          {isSaving ? 'Saving...' : 'Save Preferences'}
         </button>
       </form>
     </div>
@@ -156,6 +197,34 @@ const UserProfile = () => {
 };
 
 export default UserProfile;
+
+===== File: /src/components/common/AdminRoute.jsx =====
+// src/components/common/AdminRoute.jsx
+import React from 'react';
+import { Navigate, Outlet } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+
+const AdminRoute = ({ children }) => {
+  const { isAuthenticated, user, loading } = useAuth();
+
+  if (loading) {
+    return <div>Loading authentication...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role !== 'admin') {
+    // Optional: Redirect to a specific "Access Denied" page or just dashboard
+    return <Navigate to="/dashboard" replace />;
+    // Or: return <div><h2>Access Denied</h2><p>You do not have permission to view this page.</p></div>;
+  }
+
+  return children ? children : <Outlet />;
+};
+
+export default AdminRoute;
 
 ===== File: /src/components/common/MermaidDiagram.jsx =====
 // src/components/MermaidDiagram.jsx
@@ -229,6 +298,7 @@ import { useAuth } from '../../contexts/AuthContext';
 
 const Navbar = () => {
     const { isAuthenticated, user, logout } = useAuth();
+    console.log("user::", user)
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -243,6 +313,9 @@ const Navbar = () => {
                     Accessible Learning
                 </Link>
                 <div className="space-x-4 flex items-center">
+                {isAuthenticated && user?.role === 'admin' && (
+  <Link to="/admin" className="text-white hover:text-primary-light">Admin</Link>
+)}
                     {isAuthenticated ? (
                         <>
                             <Link to="/dashboard" className="text-white hover:text-primary-light">Dashboard</Link>
@@ -299,134 +372,80 @@ const ProtectedRoute = ({ children }) => {
 
 export default ProtectedRoute;
 
-===== File: /src/context/UserContext.js =====
-// src/context/UserContext.js
-import React, { createContext, useState, useEffect, useCallback } from 'react';
-import { getUserProfile, updateUserPreferences as apiUpdateUserPreferences, logoutUser as apiLogoutUser } from '../services/authService'; // Adjust path
-
-export const UserContext = createContext(null);
-
-export const UserProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const fetchUser = useCallback(async () => {
-    const token = localStorage.getItem('authToken');
-    if (token) {
-      setLoading(true);
-      try {
-        const userData = await getUserProfile();
-        setUser(userData);
-        setError(null);
-      } catch (err) {
-        console.error("Failed to fetch user profile", err);
-        setUser(null); // Clear user if token is invalid or error occurs
-        setError(err.response?.data?.error || 'Failed to load user data.');
-        localStorage.removeItem('authToken'); // Clear invalid token
-      } finally {
-        setLoading(false);
-      }
-    } else {
-      setLoading(false); // No token, not loading
-      setUser(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchUser();
-  }, [fetchUser]);
-
-  const login = (userData) => {
-    // authToken is set by authService.loginUser
-    setUser(userData); // userData should include preferences from login response
-    setError(null);
-  };
-
-  const logout = () => {
-    apiLogoutUser(); // Clears localStorage token
-    setUser(null);
-    setError(null);
-    // Potentially redirect to login page
-  };
-
-  const updateUserPreferences = async (preferencesData) => {
-    if (!user) throw new Error("User not logged in");
-    setLoading(true);
-    try {
-      const { preferences } = await apiUpdateUserPreferences(preferencesData);
-      setUser(prevUser => ({ ...prevUser, preferences }));
-      setError(null);
-      return preferences;
-    } catch (err) {
-      console.error("Failed to update preferences", err);
-      setError(err.response?.data?.error || 'Failed to update preferences.');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-  return (
-    <UserContext.Provider value={{ user, setUser, login, logout, loading, error, fetchUser, updateUserPreferences }}>
-      {children}
-    </UserContext.Provider>
-  );
-};
-
 ===== File: /src/contexts/AuthContext.jsx =====
-// src/contexts/AuthContext.jsx
-import React, { createContext, useState, useEffect, useContext } from 'react';
-import { loginUser, signupUser } from '../services/authService';
-import api from '../services/api'; // Import api to potentially clear defaults on logout
+// src/contexts/AuthContext.jsx (Unified)
+import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
+import {
+  loginUser as apiLoginUser,
+  signupUser as apiSignupUser,
+  getUserProfile as apiGetUserProfile,
+  updateUserPreferences as apiUpdateUserPreferences,
+  logoutUser as apiLogoutUser // This one just clears localStorage in authService
+} from '../services/authService';
 
 const AuthContext = createContext(null);
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(null); // Will hold the FULL user object
   const [token, setToken] = useState(localStorage.getItem('authToken') || null);
-  const [loading, setLoading] = useState(true); // Start loading true to check token
+  const [loading, setLoading] = useState(true); // For initial load, login, signup, etc.
   const [error, setError] = useState(null);
 
+  // Effect to load user on initial mount if token exists
   useEffect(() => {
-    const checkUser = async () => {
+    const loadUserOnMount = async () => {
       const storedToken = localStorage.getItem('authToken');
       if (storedToken) {
-        setToken(storedToken);
-        // Optionally: Verify token with backend here
-        // For simplicity now, we assume token means logged in
-        // We might need to store basic user info (like name/email) in localStorage too
-        // Or fetch it using getUserProfile() if implementing that route
-        const storedUser = localStorage.getItem('authUser');
-         if (storedUser) {
-            setUser(JSON.parse(storedUser));
-         } else {
-             // If only token is stored, maybe try fetching user profile
-             // console.log("Token found, user data missing - consider fetching profile");
-         }
+        setToken(storedToken); // Make sure token state is set
+        setLoading(true);
+        try {
+          const userData = await apiGetUserProfile(); // Fetches full user data with preferences
+          setUser(userData);
+          setError(null);
+        } catch (err) {
+          console.error("AuthContext: Failed to fetch user profile on mount", err);
+          // If token is invalid (e.g., 401 error), logout
+          if (err.response && err.response.status === 401) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('authUser'); // If you were storing this
+            setToken(null);
+            setUser(null);
+          }
+          setError(err.response?.data?.error || 'Failed to load user data.');
+        } finally {
+          setLoading(false);
+        }
+      } else {
+        setLoading(false); // No token, not loading user
       }
-      setLoading(false);
     };
-    checkUser();
-  }, []);
+    loadUserOnMount();
+  }, []); // Empty dependency array: run once on mount
 
   const login = async (credentials) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await loginUser(credentials);
+      const data = await apiLoginUser(credentials); // API returns { _id, name, email, preferences, token }
       localStorage.setItem('authToken', data.token);
-      localStorage.setItem('authUser', JSON.stringify({ _id: data._id, name: data.name, email: data.email })); // Store user info
+      // No need to store 'authUser' separately in localStorage if `user` state has it all
+      localStorage.removeItem('authUser'); // Clean up old storage if any
       setToken(data.token);
-      setUser({ _id: data._id, name: data.name, email: data.email });
+      setUser({ // Set the full user object
+        _id: data._id,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        preferences: data.preferences,
+        createdAt: data.createdAt // If backend sends it
+      });
       setLoading(false);
-      return true; // Indicate success
+      return true;
     } catch (err) {
-      console.error("Login failed:", err.response?.data?.error || err.message);
+      console.error("AuthContext: Login failed", err);
       setError(err.response?.data?.error || 'Login failed');
       setLoading(false);
-      return false; // Indicate failure
+      return false;
     }
   };
 
@@ -434,34 +453,73 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await signupUser(userData);
+      const data = await apiSignupUser(userData); // API returns { _id, name, email, preferences, token }
       localStorage.setItem('authToken', data.token);
-       localStorage.setItem('authUser', JSON.stringify({ _id: data._id, name: data.name, email: data.email }));
+      localStorage.removeItem('authUser'); // Clean up old storage if any
       setToken(data.token);
-      setUser({ _id: data._id, name: data.name, email: data.email });
+      setUser({ // Set the full user object
+        _id: data._id,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        preferences: data.preferences,
+        createdAt: data.createdAt // If backend sends it
+      });
       setLoading(false);
-      return true; // Indicate success
+      return true;
     } catch (err) {
-      console.error("Signup failed:", err.response?.data?.error || err.message);
+      console.error("AuthContext: Signup failed", err);
       setError(err.response?.data?.error || 'Signup failed');
       setLoading(false);
-      return false; // Indicate failure
+      return false;
     }
   };
 
   const logout = () => {
-    localStorage.removeItem('authToken');
-     localStorage.removeItem('authUser');
+    apiLogoutUser(); // This function in authService clears localStorage
     setToken(null);
     setUser(null);
-    // Optionally clear Axios default headers if needed, though interceptor handles it
-    // delete api.defaults.headers.common['Authorization'];
+    setError(null);
+    // No need to interact with `api.defaults.headers.common['Authorization']`
+    // as the interceptor in `services/api.js` handles token presence.
+  };
+
+  const updateUserPreferences = async (preferencesData) => {
+    if (!user) {
+      const err = new Error("User not logged in to update preferences");
+      setError(err.message);
+      throw err;
+    }
+    setLoading(true); // Can use a more specific loading state if preferred for UX
+    setError(null);
+    try {
+      const { preferences: updatedPreferences } = await apiUpdateUserPreferences(preferencesData);
+      setUser(prevUser => ({ ...prevUser, preferences: updatedPreferences }));
+      setLoading(false);
+      return updatedPreferences;
+    } catch (err) {
+      console.error("AuthContext: Failed to update preferences", err);
+      setError(err.response?.data?.error || 'Failed to update preferences.');
+      setLoading(false);
+      throw err;
+    }
   };
 
   const isAuthenticated = !!token && !!user;
 
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated, loading, error, login, signup, logout, setError }}>
+    <AuthContext.Provider value={{
+      user,
+      token,
+      isAuthenticated,
+      loading,
+      error,
+      login,
+      signup,
+      logout,
+      updateUserPreferences,
+      setError // Good to expose setError to clear it manually if needed
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -477,149 +535,270 @@ export const useAuth = () => {
 };
 
 ===== File: /src/index.js =====
-// src/index.js or src/App.js
+// src/index.js
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import { UserProvider } from './context/UserContext'; // Adjust path
+import { AuthProvider } from './contexts/AuthContext'; // Only this provider
+import { BrowserRouter } from 'react-router-dom';
+import './index.css'; // Assuming you have a global CSS file
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <UserProvider>
-      <App />
-    </UserProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </BrowserRouter>
   </React.StrictMode>
 );
 
 ===== File: /src/pages/ContentPage.jsx =====
-import React, { useState, useEffect } from 'react';
+// src/pages/ContentPage.jsx
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-// import { getContentByTopic, simplifyContent } from '../services/contentService'; // We'll create this service next
 import { useAuth } from '../contexts/AuthContext';
-import api from '../services/api'; // Use api directly for now
+import {
+  getContentByTopic,
+  simplifyContent,
+  generateVisualMap, // Assuming this will be implemented in contentService
+  generateAudioNarration // Assuming this will be implemented in contentService
+} from '../services/contentService';
+import MermaidDiagram from '../components/common/MermaidDiagram'; // Adjust path if needed
 
-// Placeholder components - create these later
-const LoadingSpinner = () => <div className="text-center p-4">Loading...</div>;
-const ErrorMessage = ({ message }) => <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">{message}</div>;
+// Placeholder components - create these properly
+const LoadingSpinner = ({ text = "Loading..." }) => <div className="text-center p-10"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-2"></div><p>{text}</p></div>;
+const ErrorMessage = ({ message }) => <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 my-4 rounded" role="alert"><p className="font-bold">Error</p><p>{message}</p></div>;
+const InfoMessage = ({ message }) => <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 my-4 rounded" role="alert"><p>{message}</p></div>;
 
 
 const ContentPage = () => {
-  const { topic } = useParams(); // Get topic from URL
-  const { token } = useAuth(); // Needed for authenticated requests
+  const { topic } = useParams();
+  const { user } = useAuth(); // Get user for preferences
+
   const [content, setContent] = useState(null);
-  const [simplifiedText, setSimplifiedText] = useState('');
   const [currentMode, setCurrentMode] = useState('original'); // 'original', 'simplified', 'visual', 'audio'
+  const [displayedText, setDisplayedText] = useState(''); // For original or simplified text
+
+  // Mode-specific states
+  const [visualMapData, setVisualMapData] = useState(null); // { format: 'mermaid', data: '...' }
+  const [audioUrl, setAudioUrl] = useState(null);
+
+  // Loading/Error states
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [simplifying, setSimplifying] = useState(false);
+  const [isProcessingMode, setIsProcessingMode] = useState(false); // For AI generation actions
 
-  useEffect(() => {
-    const fetchContent = async () => {
-      if (!topic || !token) return; // Don't fetch if no topic or token
-      setLoading(true);
-      setError(null);
-      setSimplifiedText(''); // Reset simplified text on topic change
-      setCurrentMode('original'); // Reset mode
-
-      try {
-        // --- Replace with contentService.getContentByTopic(topic) later ---
-        const response = await api.get(`/content/${topic}`);
-        setContent(response.data);
-         // Check if an 'easy' simplified version exists and load it initially?
-         const easyVersion = response.data.simplifiedVersions?.find(v => v.level === 'easy');
-         if (easyVersion) {
-            setSimplifiedText(easyVersion.text);
-         }
-      } catch (err) {
-        console.error("Failed to fetch content:", err);
-         setError(err.response?.data?.message || `Content for "${topic}" not found or failed to load.`);
-         setContent(null); // Ensure no stale content is shown
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchContent();
-  }, [topic, token]); // Re-fetch if topic or token changes
-
-
-  const handleSimplify = async (level = 'easy') => {
-    if (!content || simplifying) return;
-    setSimplifying(true);
+  const fetchContentData = useCallback(async () => {
+    if (!topic) return;
+    setLoading(true);
     setError(null);
+    setContent(null); // Reset content on new topic load
+    setDisplayedText('');
+    setVisualMapData(null);
+    setAudioUrl(null);
+    setCurrentMode('original'); // Default to original
 
     try {
-         // Check cache first
-         const cachedVersion = content.simplifiedVersions?.find(v => v.level === level);
-         if (cachedVersion) {
-             setSimplifiedText(cachedVersion.text);
-             setCurrentMode('simplified'); // Or set based on level?
-             setSimplifying(false);
-             return;
-         }
+      const data = await getContentByTopic(topic);
+      setContent(data);
+      setDisplayedText(data.originalText); // Display original text by default
 
-        // --- Replace with contentService.simplifyContent(topic, level) later ---
-        const response = await api.post(`/content/simplify`, { topic: content.topic, level });
-        setSimplifiedText(response.data.simplifiedText);
-        setCurrentMode('simplified');
-
-        // Optimistically update local state (or refetch content to get updated versions array)
-        if (content) {
-            setContent(prev => ({
-                ...prev,
-                simplifiedVersions: [...(prev.simplifiedVersions || []), {level, text: response.data.simplifiedText}]
-            }));
+      // Auto-select preferred mode if content is available and user has preference
+      if (user?.preferences?.preferredContentMode) {
+        const prefMode = user.preferences.preferredContentMode;
+        if (prefMode === 'simplified' && data.simplifiedVersions?.some(v => v.level === (user.preferences.readingLevel === 'basic' ? 'easy' : 'moderate'))) {
+           const levelToLoad = user.preferences.readingLevel === 'basic' ? 'easy' : 'moderate';
+           const version = data.simplifiedVersions.find(v => v.level === levelToLoad);
+           if(version) {
+               setDisplayedText(version.text);
+               setCurrentMode('simplified');
+           }
         }
+        // Add similar logic for visual, audio if pre-generated content exists
+      }
 
     } catch (err) {
-         console.error("Failed to simplify content:", err);
-         setError(err.response?.data?.error || 'Failed to simplify content.');
+      console.error("Failed to fetch content:", err);
+      setError(err.response?.data?.message || `Content for "${topic}" not found or failed to load.`);
     } finally {
-         setSimplifying(false);
+      setLoading(false);
+    }
+  }, [topic, user?.preferences?.preferredContentMode, user?.preferences?.readingLevel]); // Add user preferences as dependencies
+
+  useEffect(() => {
+    fetchContentData();
+  }, [fetchContentData]);
+
+
+  const handleModeChange = async (mode, params = {}) => {
+    setError(null); // Clear previous mode-specific errors
+    if (mode === currentMode && mode !== 'simplified') return; // Avoid re-processing if already in mode (except for re-simplifying)
+
+    setCurrentMode(mode);
+    setIsProcessingMode(true);
+
+    try {
+      if (mode === 'original') {
+        setDisplayedText(content.originalText);
+      } else if (mode === 'simplified') {
+        const level = params.level || (user?.preferences?.readingLevel === 'basic' ? 'easy' : 'moderate') || 'easy';
+        const cachedVersion = content.simplifiedVersions?.find(v => v.level === level);
+        if (cachedVersion && params.level) { // Only use cache if specific level requested and found
+          setDisplayedText(cachedVersion.text);
+        } else {
+          const simplifiedData = await simplifyContent(content.topic, level);
+          setDisplayedText(simplifiedData.simplifiedText);
+          // Optimistically update local content state with the new version
+          if (content) {
+            const existingVersionIndex = content.simplifiedVersions?.findIndex(v => v.level === level);
+            let newSimplifiedVersions = [...(content.simplifiedVersions || [])];
+            if (existingVersionIndex > -1) {
+              newSimplifiedVersions[existingVersionIndex] = { level, text: simplifiedData.simplifiedText, createdAt: new Date() };
+            } else {
+              newSimplifiedVersions.push({ level, text: simplifiedData.simplifiedText, createdAt: new Date() });
+            }
+            setContent(prev => ({ ...prev, simplifiedVersions: newSimplifiedVersions }));
+          }
+        }
+      } else if (mode === 'visual') {
+        const format = 'mermaid'; // Or make this configurable
+        const cachedMap = content.visualMaps?.find(v => v.format === format);
+        if (cachedMap) {
+            setVisualMapData(cachedMap);
+        } else {
+            const mapData = await generateVisualMap(content.topic, format);
+            setVisualMapData(mapData.visualMap); // Assuming service returns { visualMap: { format, data, ... } }
+             if (content) {
+                setContent(prev => ({
+                    ...prev,
+                    visualMaps: [...(prev.visualMaps || []), mapData.visualMap]
+                }));
+            }
+        }
+      } else if (mode === 'audio') {
+        // For MVP, assume audio is generated for the currently displayed text
+        // In a real app, you might choose original or a specific simplified version
+        if (content.audioNarrations && content.audioNarrations.length > 0) {
+            setAudioUrl(content.audioNarrations[0].url); // Use first available cached audio
+        } else if (displayedText) {
+            const narrationData = await generateAudioNarration(content._id, displayedText);
+            setAudioUrl(narrationData.narration.url); // Assuming service returns { narration: { url, ... } }
+             if (content) {
+                setContent(prev => ({
+                    ...prev,
+                    audioNarrations: [...(prev.audioNarrations || []), narrationData.narration]
+                }));
+            }
+        } else {
+            setError("No text available to narrate.");
+        }
+      }
+    } catch (err) {
+      console.error(`Failed to switch to ${mode} mode:`, err);
+      setError(err.response?.data?.error || `Failed to generate ${mode} content.`);
+      // Revert to original text on error if mode processing failed
+      // setCurrentMode('original');
+      // setDisplayedText(content?.originalText || '');
+    } finally {
+      setIsProcessingMode(false);
     }
   };
 
-  // --- Placeholder functions for other modes ---
-  const handleVisualMap = () => { alert('Visual Map mode not implemented yet.'); setCurrentMode('visual'); };
-  const handleAudio = () => { alert('Audio mode not implemented yet.'); setCurrentMode('audio'); };
+  // Apply dynamic styles based on user preferences
+  const userPrefs = user?.preferences;
+  const contentStyles = {
+    fontSize: userPrefs?.fontSize === 'small' ? '0.875rem' :
+              userPrefs?.fontSize === 'large' ? '1.25rem' :
+              userPrefs?.fontSize === 'xlarge' ? '1.5rem' : '1rem', // medium/default
+    fontFamily: userPrefs?.theme === 'dyslexia' ? 'OpenDyslexic, sans-serif' : 'inherit', // Assuming a 'dyslexia' theme option for font
+  };
+  // Theme class for container (light, dark, high-contrast)
+  const themeClass = userPrefs?.theme === 'dark' ? 'theme-dark bg-gray-800 text-gray-100' :
+                     userPrefs?.theme === 'high-contrast' ? 'theme-high-contrast bg-black text-white' :
+                     'theme-light bg-gray-50';
 
 
-  if (loading) return <LoadingSpinner />;
+  if (loading) return <LoadingSpinner text={`Loading ${topic.replace('-', ' ')}...`} />;
 
   return (
-    <div className="container mx-auto p-4">
-      <Link to="/dashboard" className="text-blue-600 hover:underline mb-4 inline-block">← Back to Dashboard</Link>
+    <div className={`container mx-auto p-4 md:p-6 min-h-screen ${themeClass}`}>
+      <div className="mb-4">
+        <Link to="/dashboard" className={`hover:underline text-sm ${userPrefs?.theme === 'dark' || userPrefs?.theme === 'high-contrast' ? 'text-blue-300 hover:text-blue-200' : 'text-primary hover:text-primary-dark'}`}>
+            ← Back to Dashboard
+        </Link>
+      </div>
 
-      {error && !content && <ErrorMessage message={error} />} {/* Show critical error if content failed */}
+      {error && <ErrorMessage message={error} />}
+
+      {!content && !loading && !error && <InfoMessage message={`No content found for "${topic}".`} />}
 
       {content && (
         <div>
-           {error && <ErrorMessage message={error} />} {/* Show non-critical errors (e.g., simplify failed) */}
-
-          <h1 className="text-3xl font-bold mb-4 capitalize">{content.topic.replace('-', ' ')}</h1>
+          <h1 className="text-3xl md:text-4xl font-bold mb-6 capitalize">
+            {content.topic.replace(/-/g, ' ')}
+          </h1>
 
           {/* --- Content Mode Switching UI --- */}
-          <div className="mb-6 border-b pb-3 flex flex-wrap gap-2">
-              <button onClick={() => setCurrentMode('original')} className={`px-3 py-1 rounded ${currentMode === 'original' ? 'bg-primary text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Original Text</button>
-              <button onClick={() => simplifiedText ? setCurrentMode('simplified') : handleSimplify()} disabled={simplifying} className={`px-3 py-1 rounded ${currentMode === 'simplified' ? 'bg-primary text-white' : 'bg-gray-200 hover:bg-gray-300'} disabled:opacity-50`}>
-                 {simplifying ? 'Simplifying...' : (simplifiedText ? 'Simplified' : 'Simplify Text')}
+          <div className="mb-6 border-b pb-3 flex flex-wrap gap-2 items-center">
+            {['original', 'simplified', 'visual', 'audio'].map((modeName) => (
+              <button
+                key={modeName}
+                onClick={() => handleModeChange(modeName)}
+                disabled={isProcessingMode && currentMode !== modeName && modeName !== 'original'}
+                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors
+                  ${currentMode === modeName
+                    ? 'bg-primary text-white shadow-md'
+                    : `${userPrefs?.theme === 'dark' || userPrefs?.theme === 'high-contrast' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'} disabled:opacity-50 disabled:cursor-not-allowed`}
+                `}
+              >
+                {isProcessingMode && currentMode === modeName ? `Loading ${modeName}...` : modeName.charAt(0).toUpperCase() + modeName.slice(1)}
               </button>
-              {/* Add buttons for other levels if needed */}
-              {/* <button onClick={() => handleSimplify('moderate')} disabled={simplifying} className="...">Simplify (Moderate)</button> */}
-              <button onClick={handleVisualMap} className={`px-3 py-1 rounded ${currentMode === 'visual' ? 'bg-primary text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Visual Map</button>
-              <button onClick={handleAudio} className={`px-3 py-1 rounded ${currentMode === 'audio' ? 'bg-primary text-white' : 'bg-gray-200 hover:bg-gray-300'}`}>Audio</button>
+            ))}
+            {currentMode === 'simplified' && ( // Show level options for simplified mode
+                <select
+                    value={(user?.preferences?.readingLevel === 'basic' ? 'easy' : 'moderate') || 'easy'}
+                    onChange={(e) => handleModeChange('simplified', { level: e.target.value })}
+                    disabled={isProcessingMode}
+                    className={`ml-2 px-2 py-1.5 rounded text-sm border ${userPrefs?.theme === 'dark' || userPrefs?.theme === 'high-contrast' ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300'} focus:ring-primary focus:border-primary`}
+                >
+                    <option value="easy">Easy</option>
+                    <option value="moderate">Moderate</option>
+                </select>
+            )}
           </div>
 
           {/* --- Content Display Area --- */}
-          <div className="prose max-w-none p-4 border rounded bg-white shadow"> {/* Using prose for nice text styling */}
-            {currentMode === 'original' && <div dangerouslySetInnerHTML={{ __html: content.originalText.replace(/\n/g, '<br />') }} />} {/* Basic display */}
-            {currentMode === 'simplified' && <div>{simplifiedText || 'Click "Simplify Text" to generate.'}</div>}
-            {currentMode === 'visual' && <div>Visual Map Area - To be implemented.</div>}
-            {currentMode === 'audio' && <div>Audio Player Area - To be implemented.</div>}
-          </div>
+          <article
+            style={contentStyles}
+            className={`prose prose-sm sm:prose lg:prose-lg xl:prose-xl max-w-none p-4 md:p-6 border rounded shadow-sm
+            ${userPrefs?.theme === 'dark' ? 'bg-gray-750 border-gray-700 prose-invert' :
+            userPrefs?.theme === 'high-contrast' ? 'bg-gray-900 border-gray-600 prose-invert filter invert-[1] contrast-[2]' : // Example high contrast
+            'bg-white border-gray-200'}`}
+          >
+            {currentMode === 'original' && <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n/g, '<br />') }} />}
+            {currentMode === 'simplified' && <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n/g, '<br />') }} />}
 
-           {/* TODO: Add Interactive Companion (Chatbot) Component Here */}
+            {currentMode === 'visual' && (
+              isProcessingMode && !visualMapData ? <LoadingSpinner text="Generating visual map..." /> :
+              visualMapData ? <MermaidDiagram chartData={visualMapData.data} diagramId={`content-map-${content._id}`} /> :
+              !isProcessingMode && <InfoMessage message="No visual map generated or available." />
+            )}
+
+            {currentMode === 'audio' && (
+              isProcessingMode && !audioUrl ? <LoadingSpinner text="Generating audio..." /> :
+              audioUrl ? <audio controls src={audioUrl} className="w-full my-2">Your browser does not support the audio element.</audio> :
+              !isProcessingMode && <InfoMessage message="No audio generated or available." />
+            )}
+          </article>
+
+          {/* Interactive Companion (Chatbot) Placeholder */}
+          <div className="mt-8 p-4 border rounded shadow-sm bg-white">
+            <h3 className="text-xl font-semibold mb-3">Interactive Companion (Coming Soon)</h3>
+            <p className="text-gray-600">Ask questions and get personalized help related to this topic.</p>
+            {/* <ChatbotComponent topic={content.topic} /> */}
+          </div>
 
         </div>
       )}
@@ -835,6 +1014,694 @@ const SignupPage = () => {
 
 export default SignupPage;
 
+===== File: /src/pages/admin/AdminContentListPage.jsx =====
+// src/pages/admin/AdminContentListPage.jsx
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { getAllContentForAdmin, deleteContent } from '../../services/contentService';
+import { useAuth } from '../../contexts/AuthContext'; // For user role check if needed, though route protects
+
+const AdminContentListPage = () => {
+  const [contents, setContents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const { token } = useAuth(); // To ensure API calls are authorized
+
+  const fetchContents = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getAllContentForAdmin();
+      setContents(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to fetch content list.');
+      console.error("Fetch content list error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token) { // Ensure token is available before fetching
+        fetchContents();
+    }
+  }, [token]);
+
+  const handleDelete = async (contentId, topic) => {
+    if (window.confirm(`Are you sure you want to delete the topic "${topic}"? This action cannot be undone.`)) {
+      try {
+        await deleteContent(contentId);
+        setContents(prevContents => prevContents.filter(c => c._id !== contentId));
+        alert(`Topic "${topic}" deleted successfully.`);
+      } catch (err) {
+        setError(err.response?.data?.error || `Failed to delete topic "${topic}".`);
+        console.error("Delete content error:", err);
+      }
+    }
+  };
+
+  if (loading) return <div className="p-4">Loading content...</div>;
+
+  return (
+    <div className="container mx-auto p-4">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-primary">Manage Content</h1>
+        <Link
+          to="/admin/content/create"
+          className="bg-secondary hover:bg-pink-500 text-white font-semibold py-2 px-4 rounded transition duration-200"
+        >
+          Create New Content
+        </Link>
+      </div>
+
+      {error && <p className="text-red-500 bg-red-100 p-3 rounded mb-4">{error}</p>}
+
+      {contents.length === 0 && !loading && (
+        <p>No content found. Get started by creating some!</p>
+      )}
+
+      {contents.length > 0 && (
+        <div className="overflow-x-auto bg-white shadow-md rounded-lg">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Topic</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tags</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {contents.map((content) => (
+                <tr key={content._id}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900 capitalize">{content.topic?.replace('-', ' ')}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">{content.tags?.join(', ')}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-500">{new Date(content.createdAt).toLocaleDateString()}</div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <Link to={`/admin/content/edit/${content._id}`} className="text-indigo-600 hover:text-indigo-900 mr-3">
+                      Edit
+                    </Link>
+                    <button
+                      onClick={() => handleDelete(content._id, content.topic)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default AdminContentListPage;
+
+===== File: /src/pages/admin/AdminCreateContentPage.jsx =====
+// src/pages/admin/AdminCreateContentPage.jsx
+import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { createContent } from '../../services/contentService';
+
+// A simple reusable form field component (optional, but can reduce repetition)
+const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder }) => (
+  <div className="mb-4">
+    <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}{required && <span className="text-red-500">*</span>}</label>
+    {textarea ? (
+      <textarea
+        id={id}
+        name={id}
+        rows="10"
+        value={value}
+        onChange={onChange}
+        required={required}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+      />
+    ) : (
+      <input
+        type={type}
+        id={id}
+        name={id}
+        value={value}
+        onChange={onChange}
+        required={required}
+        placeholder={placeholder}
+        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
+      />
+    )}
+  </div>
+);
+
+
+const AdminCreateContentPage = () => {
+  const [formData, setFormData] = useState({
+    topic: '',
+    originalText: '',
+    tags: '', // Comma-separated string for tags
+    imageUrls: '', // Comma-separated string for image URLs
+    // videoExplainers and audioNarrations might be handled differently in a more complex UI
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    const contentData = {
+      ...formData,
+      tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
+      imageUrls: formData.imageUrls ? formData.imageUrls.split(',').map(url => url.trim()).filter(Boolean) : [],
+      // For MVP, videoExplainers and audioNarrations can be empty arrays or handled later
+      videoExplainers: [],
+      audioNarrations: [],
+    };
+
+    try {
+      await createContent(contentData);
+      alert('Content created successfully!');
+      navigate('/admin/content');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to create content.');
+      console.error("Create content error:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="container mx-auto p-4">
+      <Link to="/admin/content" className="text-primary hover:underline mb-4 inline-block">← Back to Content List</Link>
+      <h1 className="text-3xl font-bold text-primary mb-6">Create New Content</h1>
+
+      <form onSubmit={handleSubmit} className="max-w-2xl mx-auto bg-white p-8 shadow-md rounded-lg">
+        {error && <p className="text-red-500 bg-red-100 p-3 rounded mb-4">{error}</p>}
+
+        <FormField
+          id="topic"
+          label="Topic Title"
+          value={formData.topic}
+          onChange={handleChange}
+          required
+          placeholder="e.g., Photosynthesis Basics"
+        />
+        <FormField
+          id="originalText"
+          label="Original Content Text"
+          value={formData.originalText}
+          onChange={handleChange}
+          textarea
+          required
+          placeholder="Enter the full educational text here..."
+        />
+        <FormField
+          id="tags"
+          label="Tags (comma-separated)"
+          value={formData.tags}
+          onChange={handleChange}
+          placeholder="e.g., biology, science, plants"
+        />
+        <FormField
+          id="imageUrls"
+          label="Image URLs (comma-separated)"
+          value={formData.imageUrls}
+          onChange={handleChange}
+          placeholder="e.g., https://example.com/image1.jpg, https://example.com/image2.png"
+        />
+
+        {/* More complex fields for videoExplainers, audioNarrations could be added here */}
+        {/* For example, a way to add multiple URL inputs for videos */}
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded transition duration-200 disabled:opacity-50"
+        >
+          {loading ? 'Creating...' : 'Create Content'}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+export default AdminCreateContentPage;
+
+===== File: /src/pages/admin/AdminDashboardPage.jsx =====
+// src/pages/admin/AdminDashboardPage.jsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext'; // To greet the admin
+
+// Example Icons (using simple text, replace with actual icon components if you have them)
+const ContentIcon = () => <span className="text-2xl mr-2">📚</span>; // Simple emoji icon
+const UsersIcon = () => <span className="text-2xl mr-2">👥</span>;
+const SettingsIcon = () => <span className="text-2xl mr-2">⚙️</span>;
+const AnalyticsIcon = () => <span className="text-2xl mr-2">📊</span>;
+
+
+const AdminDashboardPage = () => {
+  const { user } = useAuth();
+
+  // Placeholder data - in a real app, you might fetch some stats here
+  const stats = {
+    totalContent: 15, // Example: fetch from an API endpoint
+    totalUsers: 120,  // Example
+    pendingApprovals: 0 // Example
+  };
+
+  return (
+    <div className="container mx-auto p-4 md:p-6">
+      <h1 className="text-3xl font-bold text-primary mb-4">Admin Dashboard</h1>
+      <p className="mb-8 text-lg text-gray-700">
+        Welcome back, <span className="font-semibold">{user?.name || user?.email || 'Admin'}</span>!
+      </p>
+
+      {/* Quick Stats Section (Optional - requires backend data) */}
+      {/*
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">Total Content Topics</h3>
+          <p className="text-3xl font-bold text-primary">{stats.totalContent}</p>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow-md">
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">Registered Users</h3>
+          <p className="text-3xl font-bold text-primary">{stats.totalUsers}</p>
+        </div>
+        {stats.pendingApprovals > 0 && (
+          <div className="bg-orange-100 p-6 rounded-lg shadow-md">
+            <h3 className="text-xl font-semibold text-orange-700 mb-2">Pending Approvals</h3>
+            <p className="text-3xl font-bold text-orange-600">{stats.pendingApprovals}</p>
+          </div>
+        )}
+      </div>
+      */}
+
+      <h2 className="text-2xl font-semibold text-gray-800 mb-6">Management Sections</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Manage Content Card */}
+        <Link
+          to="/admin/content"
+          className="block p-6 bg-white rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200 ease-in-out transform hover:-translate-y-1"
+        >
+          <div className="flex items-center mb-3">
+            <ContentIcon />
+            <h3 className="text-xl font-semibold text-gray-700">Manage Content</h3>
+          </div>
+          <p className="text-gray-600 text-sm">
+            Create, edit, and delete learning topics and their associated materials.
+          </p>
+        </Link>
+
+        {/* Manage Users Card (Future Feature) */}
+        <div
+          // to="/admin/users" // Uncomment when implemented
+          className="block p-6 bg-gray-100 rounded-lg shadow-md cursor-not-allowed opacity-60"
+          title="User management coming soon"
+        >
+          <div className="flex items-center mb-3">
+            <UsersIcon />
+            <h3 className="text-xl font-semibold text-gray-500">Manage Users</h3>
+          </div>
+          <p className="text-gray-500 text-sm">
+            View and manage user accounts. (Coming Soon)
+          </p>
+        </div>
+
+        {/* Platform Settings Card (Future Feature) */}
+        <div
+          // to="/admin/settings" // Uncomment when implemented
+          className="block p-6 bg-gray-100 rounded-lg shadow-md cursor-not-allowed opacity-60"
+          title="Platform settings coming soon"
+        >
+          <div className="flex items-center mb-3">
+            <SettingsIcon />
+            <h3 className="text-xl font-semibold text-gray-500">Platform Settings</h3>
+          </div>
+          <p className="text-gray-500 text-sm">
+            Configure global settings for the learning portal. (Coming Soon)
+          </p>
+        </div>
+
+        {/* Analytics/Reports Card (Future Feature) */}
+        <div
+          // to="/admin/analytics" // Uncomment when implemented
+          className="block p-6 bg-gray-100 rounded-lg shadow-md cursor-not-allowed opacity-60"
+          title="Analytics coming soon"
+        >
+          <div className="flex items-center mb-3">
+            <AnalyticsIcon />
+            <h3 className="text-xl font-semibold text-gray-500">Analytics & Reports</h3>
+          </div>
+          <p className="text-gray-500 text-sm">
+            View usage statistics and learning progress insights. (Coming Soon)
+          </p>
+        </div>
+
+        {/* Add more admin sections as cards here */}
+      </div>
+    </div>
+  );
+};
+
+export default AdminDashboardPage;
+
+===== File: /src/pages/admin/AdminEditContentPage.jsx =====
+// src/pages/admin/AdminEditContentPage.jsx
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { getContentByIdForAdmin, updateContent } from '../../services/contentService';
+import MermaidDiagram from '../../components/common/MermaidDiagram'; // Adjust path if needed
+
+// Reusable FormField component (can be moved to a common components folder)
+const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder, disabled = false }) => (
+  <div className="mb-4">
+    <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}{required && !disabled && <span className="text-red-500">*</span>}</label>
+    {textarea ? (
+      <textarea
+        id={id}
+        name={id}
+        rows="10"
+        value={value}
+        onChange={onChange}
+        required={required && !disabled}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+      />
+    ) : (
+      <input
+        type={type}
+        id={id}
+        name={id}
+        value={value}
+        onChange={onChange}
+        required={required && !disabled}
+        placeholder={placeholder}
+        disabled={disabled}
+        className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+      />
+    )}
+  </div>
+);
+
+
+const AdminEditContentPage = () => {
+  const { contentId } = useParams();
+  const navigate = useNavigate();
+
+  const [formData, setFormData] = useState({
+    topic: '',
+    originalText: '',
+    tags: '', // Comma-separated string for UI
+    imageUrls: '', // Comma-separated string for UI
+    videoExplainers: [], // Array of objects: { source, url, title, description }
+    audioNarrations: [], // Array of objects: { language, voice, url }
+    simplifiedVersions: [], // For display
+    visualMaps: [],         // For display
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    const fetchContent = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await getContentByIdForAdmin(contentId);
+        setFormData({
+          topic: data.topic || '',
+          originalText: data.originalText || '',
+          tags: data.tags?.join(', ') || '',
+          imageUrls: data.media?.imageUrls?.join(', ') || '',
+          videoExplainers: data.videoExplainers || [],
+          audioNarrations: data.audioNarrations || [],
+          simplifiedVersions: data.simplifiedVersions || [],
+          visualMaps: data.visualMaps || [],
+        });
+      } catch (err) {
+        setError(err.response?.data?.error || `Failed to fetch content (ID: ${contentId}) for editing.`);
+        console.error("Fetch content for edit error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    if (contentId) {
+        fetchContent();
+    } else {
+        setError("Content ID is missing.");
+        setLoading(false);
+    }
+  }, [contentId]);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // --- Handlers for videoExplainers array field ---
+  const handleVideoChange = (index, field, value) => {
+    const updatedVideos = formData.videoExplainers.map((video, i) =>
+      i === index ? { ...video, [field]: value } : video
+    );
+    setFormData(prev => ({ ...prev, videoExplainers: updatedVideos }));
+  };
+
+  const handleAddVideoField = () => {
+    setFormData(prev => ({
+      ...prev,
+      videoExplainers: [
+        ...prev.videoExplainers,
+        { source: 'youtube', url: '', title: '', description: '' }
+      ]
+    }));
+  };
+
+  const handleRemoveVideoField = (index) => {
+    setFormData(prev => ({
+      ...prev,
+      videoExplainers: prev.videoExplainers.filter((_, i) => i !== index)
+    }));
+  };
+
+  // --- Handlers for audioNarrations (example if you implement a similar UI) ---
+  const handleAudioChange = (index, field, value) => {
+    const updatedAudios = formData.audioNarrations.map((audio, i) =>
+        i === index ? { ...audio, [field]: value } : audio
+    );
+    setFormData(prev => ({ ...prev, audioNarrations: updatedAudios }));
+  };
+
+  const handleAddAudioField = () => {
+    setFormData(prev => ({
+        ...prev,
+        audioNarrations: [
+            ...prev.audioNarrations,
+            { language: 'en-US', voice: 'default', url: '' }
+        ]
+    }));
+  };
+
+  const handleRemoveAudioField = (index) => {
+    setFormData(prev => ({
+        ...prev,
+        audioNarrations: prev.audioNarrations.filter((_, i) => i !== index)
+    }));
+  };
+
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!formData.topic || !formData.originalText) {
+        setError("Topic and Original Text are required.");
+        return;
+    }
+    setSaving(true);
+    setError(null);
+
+    const contentDataToUpdate = {
+      topic: formData.topic,
+      originalText: formData.originalText,
+      tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
+      imageUrls: formData.imageUrls ? formData.imageUrls.split(',').map(url => url.trim()).filter(Boolean) : [],
+      videoExplainers: formData.videoExplainers.filter(video => video.url && video.url.trim() !== ''),
+      audioNarrations: formData.audioNarrations.filter(audio => audio.url && audio.url.trim() !== ''),
+      // simplifiedVersions and visualMaps are generally not sent for update from admin UI unless direct edit is intended
+    };
+
+    try {
+      await updateContent(contentId, contentDataToUpdate);
+      alert('Content updated successfully!');
+      navigate('/admin/content');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to update content.');
+      console.error("Update content error:", err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return <div className="p-6 text-center">Loading content details...</div>;
+  if (error && !formData.topic) return <div className="p-6 text-center text-red-600 bg-red-50">{error} <Link to="/admin/content" className="text-blue-500 underline">Go back</Link></div>;
+
+
+  return (
+    <div className="container mx-auto p-4 md:p-6">
+      <div className="mb-6">
+        <Link to="/admin/content" className="text-primary hover:underline text-sm">
+          ← Back to Content List
+        </Link>
+      </div>
+      <h1 className="text-2xl md:text-3xl font-bold text-primary mb-6">
+        Edit Content: <span className="capitalize">{formData.topic || "Loading topic..."}</span>
+      </h1>
+
+      <form onSubmit={handleSubmit} className="max-w-3xl mx-auto bg-white p-6 md:p-8 shadow-lg rounded-lg">
+        {error && <p className="text-red-600 bg-red-100 p-3 rounded mb-4 text-sm">{error}</p>}
+
+        <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
+            <legend className="text-lg font-semibold text-gray-700 px-2">Core Content</legend>
+            <FormField id="topic" label="Topic Title" value={formData.topic} onChange={handleChange} required />
+            <FormField id="originalText" label="Original Content Text" value={formData.originalText} onChange={handleChange} textarea required />
+            <FormField id="tags" label="Tags (comma-separated)" value={formData.tags} onChange={handleChange} placeholder="e.g., biology, science, plants" />
+            <FormField id="imageUrls" label="Image URLs (comma-separated)" value={formData.imageUrls} onChange={handleChange} placeholder="e.g., https://example.com/image.jpg" />
+        </fieldset>
+
+        {/* --- Section for Video Explainers --- */}
+        <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
+          <legend className="text-lg font-semibold text-gray-700 px-2">Video Explainers</legend>
+          {formData.videoExplainers.map((video, index) => (
+            <div key={index} className="mb-4 p-3 border border-gray-200 rounded-md relative bg-gray-50">
+              <button
+                type="button"
+                onClick={() => handleRemoveVideoField(index)}
+                className="absolute top-2 right-2 text-red-500 hover:text-red-700 text-xs px-2 py-1 bg-white border border-red-300 rounded"
+                title="Remove Video"
+              >
+                Remove
+              </button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                <FormField id={`videoUrl-${index}`} label="URL" placeholder="https://www.youtube.com/watch?v=..." value={video.url} onChange={(e) => handleVideoChange(index, 'url', e.target.value)} required />
+                <div>
+                  <label htmlFor={`videoSource-${index}`} className="block text-sm font-medium text-gray-700 mb-1">Source</label>
+                  <select
+                    id={`videoSource-${index}`}
+                    value={video.source}
+                    onChange={(e) => handleVideoChange(index, 'source', e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-primary focus:border-primary"
+                  >
+                    <option value="youtube">YouTube</option>
+                    <option value="vimeo">Vimeo</option>
+                    <option value="custom_upload">Custom Upload</option>
+                    <option value="generated">AI Generated</option>
+                  </select>
+                </div>
+              </div>
+              <FormField id={`videoTitle-${index}`} label="Title (optional)" placeholder="Video Title" value={video.title} onChange={(e) => handleVideoChange(index, 'title', e.target.value)} />
+              <FormField id={`videoDesc-${index}`} label="Description (brief, optional)" placeholder="Brief description" value={video.description} onChange={(e) => handleVideoChange(index, 'description', e.target.value)} textarea />
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={handleAddVideoField}
+            className="mt-2 bg-green-100 hover:bg-green-200 text-green-700 text-sm font-medium py-2 px-3 rounded-md transition duration-150 border border-green-300"
+          >
+            + Add Video Explainer
+          </button>
+        </fieldset>
+
+        {/* --- Section for Audio Narrations (Example Structure) --- */}
+        <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
+            <legend className="text-lg font-semibold text-gray-700 px-2">Audio Narrations</legend>
+            {formData.audioNarrations.map((audio, index) => (
+                <div key={index} className="mb-4 p-3 border border-gray-200 rounded-md relative bg-gray-50">
+                    <button type="button" onClick={() => handleRemoveAudioField(index)} className="absolute top-2 right-2 text-red-500 hover:text-red-700 text-xs px-2 py-1 bg-white border border-red-300 rounded" title="Remove Audio">Remove</button>
+                    <FormField id={`audioUrl-${index}`} label="Audio URL" placeholder="https://example.com/audio.mp3" value={audio.url} onChange={(e) => handleAudioChange(index, 'url', e.target.value)} required />
+                    {/* You could add fields for language and voice if needed */}
+                    {/* <FormField id={`audioLang-${index}`} label="Language" value={audio.language} onChange={(e) => handleAudioChange(index, 'language', e.target.value)} /> */}
+                </div>
+            ))}
+            <button type="button" onClick={handleAddAudioField} className="mt-2 bg-green-100 hover:bg-green-200 text-green-700 text-sm font-medium py-2 px-3 rounded-md transition duration-150 border border-green-300">
+                + Add Audio Narration
+            </button>
+        </fieldset>
+
+
+        {/* --- Section for AI-Generated Simplified Versions (Read-Only) --- */}
+        {formData.simplifiedVersions && formData.simplifiedVersions.length > 0 && (
+          <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
+            <legend className="text-lg font-semibold text-gray-700 px-2">AI-Generated Simplified Texts</legend>
+            {formData.simplifiedVersions.map((version, index) => (
+              <div key={index} className="mb-3 p-3 border border-gray-200 rounded-md bg-gray-50">
+                <div className="flex justify-between items-center mb-1">
+                    <p className="text-sm font-semibold text-gray-700">Level: <span className="capitalize font-normal bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">{version.level}</span></p>
+                    <p className="text-xs text-gray-500">Generated: {new Date(version.createdAt).toLocaleString()}</p>
+                </div>
+                <div className="mt-1 p-2 bg-white border rounded max-h-48 overflow-y-auto text-sm">
+                  <pre className="whitespace-pre-wrap break-words">{version.text}</pre>
+                </div>
+              </div>
+            ))}
+            {/* Optional: Button to clear cached simplified versions */}
+          </fieldset>
+        )}
+
+        {/* --- Section for AI-Generated Visual Maps (Read-Only) --- */}
+        {formData.visualMaps && formData.visualMaps.length > 0 && (
+          <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
+            <legend className="text-lg font-semibold text-gray-700 px-2">AI-Generated Visual Maps</legend>
+            {formData.visualMaps.map((vMap, index) => (
+              <div key={index} className="mb-3 p-3 border border-gray-200 rounded-md bg-gray-50">
+                <div className="flex justify-between items-center mb-1">
+                    <p className="text-sm font-semibold text-gray-700">Format: <span className="capitalize font-normal bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs">{vMap.format}</span></p>
+                    <p className="text-xs text-gray-500">Generated: {new Date(vMap.createdAt).toLocaleString()}</p>
+                </div>
+                <div className="mt-1 p-2 bg-white border rounded max-h-96 overflow-y-auto">
+                  {vMap.format === 'mermaid' ? (
+                    <MermaidDiagram chartData={vMap.data} diagramId={`admin-map-${contentId}-${index}`} />
+                  ) : (
+                    <pre className="text-sm whitespace-pre-wrap break-words">{vMap.data}</pre>
+                  )}
+                </div>
+                {vMap.notes && <p className="text-xs text-gray-600 mt-1 italic">Notes: {vMap.notes}</p>}
+              </div>
+            ))}
+            {/* Optional: Button to clear cached visual maps */}
+          </fieldset>
+        )}
+
+        <button
+          type="submit"
+          disabled={saving || loading}
+          className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2.5 px-4 rounded-md transition duration-200 disabled:opacity-60"
+        >
+          {saving ? 'Saving Changes...' : 'Save Changes'}
+        </button>
+      </form>
+    </div>
+  );
+};
+
+export default AdminEditContentPage;
+
 ===== File: /src/reportWebVitals.js =====
 const reportWebVitals = onPerfEntry => {
   if (onPerfEntry && onPerfEntry instanceof Function) {
@@ -892,7 +1759,7 @@ export const loginUser = async (credentials) => {
     localStorage.setItem('authToken', response.data.token); // Store token
     // You might want to store user info in context/state management too
   }
-  return response.data; // { _id, name, email, preferences, token }
+  return response.data; // { _id, name, email, role, preferences, token }
 };
 
 export const signupUser = async (userData) => {
@@ -900,7 +1767,7 @@ export const signupUser = async (userData) => {
   if (response.data && response.data.token) {
     localStorage.setItem('authToken', response.data.token); // Store token
   }
-  return response.data; // { _id, name, email, preferences, token }
+  return response.data; // { _id, name, email, role, preferences, token }
 };
 
 export const logoutUser = () => {
@@ -929,6 +1796,68 @@ export const updateUserPreferences = async (preferencesData) => {
         console.error("Error updating preferences:", error.response ? error.response.data : error.message);
         throw error;
     }
+};
+
+===== File: /src/services/contentService.js =====
+// src/services/contentService.js
+import api from './api';
+
+// --- User-facing functions (from Phase 1, ensure they exist) ---
+export const getContentByTopic = async (topic) => {
+  const response = await api.get(`/content/topic/${topic}`); // Corrected path
+  return response.data;
+};
+
+export const simplifyContent = async (topic, level = 'easy') => {
+  const response = await api.post(`/content/simplify`, { topic, level });
+  return response.data;
+};
+
+export const generateVisualMap = async (topic, format = 'mermaid') => {
+  const response = await api.post(`/content/visual-map`, { topic, format });
+  return response.data;
+};
+
+export const generateAudioNarration = async (contentId, textToNarrate) => { // Simplified params for now
+  // Assuming backend takes contentId and figures out text or uses default
+  const response = await api.post(`/content/generate-audio`, { contentId, textToNarrate });
+  return response.data;
+};
+
+export const findVideoExplainers = async (contentId, query) => {
+  const response = await api.post(`/content/find-videos`, { contentId, query });
+  return response.data; // Backend placeholder returns content with video added
+};
+
+
+// --- Admin-facing functions (NEW for Phase 3) ---
+export const getAllContentForAdmin = async () => {
+  // Backend route /api/content/ (GET) is protected but not admin-only by default in your current routes.
+  // Let's assume it returns enough for admin listing or we create a new admin-specific one.
+  // For now, we'll use the existing GET /api/content, which might need adjustment for admin needs.
+  const response = await api.get('/content'); // This route is already `protect`
+  return response.data; // Returns [{ topic, tags, createdAt }, ...]
+};
+
+export const getContentByIdForAdmin = async (contentId) => {
+  const response = await api.get(`/content/${contentId}`); // This route is `protect, isAdmin`
+  return response.data; // Returns full content object
+};
+
+export const createContent = async (contentData) => {
+  // contentData = { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations }
+  const response = await api.post('/content/create', contentData); // `protect, isAdmin`
+  return response.data;
+};
+
+export const updateContent = async (contentId, contentData) => {
+  const response = await api.put(`/content/${contentId}`, contentData); // `protect, isAdmin`
+  return response.data;
+};
+
+export const deleteContent = async (contentId) => {
+  const response = await api.delete(`/content/${contentId}`); // `protect, isAdmin`
+  return response.data; // Returns { message: 'Content removed successfully.' }
 };
 
 ===== File: /src/setupTests.js =====
