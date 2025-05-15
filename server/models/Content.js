@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const simplifiedSchema = new mongoose.Schema({
   level: { // 'easy', 'moderate' correspond to user reading levels
     type: String,
-    enum: ['easy', 'moderate'], // 'visual' mode is handled differently
+    enum: ['easy', 'moderate', 'advanced'], // 'visual' mode is handled differently
     required: true
   },
   text: { type: String },

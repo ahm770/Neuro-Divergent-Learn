@@ -20,6 +20,9 @@ import AdminEditContentPage from './pages/admin/AdminEditContentPage';
 import ProtectedRoute from './components/common/ProtectedRoute';
 import Navbar from './components/common/Navbar';
 import SimpleMermaidTest from './components/common/SimpleMermaidTest';
+// Import react-toastify
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css'; // Import default CSS
 
 const App = () => { // Renamed from App to avoid conflict if AuthProvider is here
   const { user } = useAuth();
@@ -56,6 +59,18 @@ const App = () => { // Renamed from App to avoid conflict if AuthProvider is her
 
   return (
     <div className="min-h-screen flex flex-col">
+       <ToastContainer
+        position="bottom-right" // Or "top-right", "top-center", etc.
+        autoClose={5000} // Auto close after 5 seconds
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="colored" // Or "light", "dark" - "colored" adapts to type (success, error)
+      />
       <Navbar />
       <main className="flex-grow container mx-auto px-4 py-8">
         <Routes>
