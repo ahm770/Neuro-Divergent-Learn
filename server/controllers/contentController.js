@@ -2,6 +2,7 @@
 const Content = require('../models/Content');
 const User = require('../models/User');
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
+const logAction = require('../utils/auditLogger'); // Import the logger
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 let genAI;
@@ -54,10 +55,21 @@ const createContent = async (req, res) => {
       media: { imageUrls: imageUrls || [] },
       videoExplainers: videoExplainers || [],
       audioNarrations: audioNarrations || [],
-      createdBy: req.user?._id
+      createdBy: req.user._id 
     });
     await newContent.save();
-    res.status(201).json(newContent);
+    
+    await logAction(
+      req.user.id, 
+      'CREATE_CONTENT', 
+      'Content', 
+      newContent._id, 
+      { topic: newContent.topic, titleFromUser: topic }, // Log original title too if it differs from slug
+      req.ip
+    );
+
+    const populatedContent = await Content.findById(newContent._id).populate('createdBy', 'name email');
+    res.status(201).json(populatedContent);
   } catch (err) {
     console.error("Error creating content:", err.message, err.stack);
     res.status(500).json({ error: 'Failed to create content' });
@@ -66,8 +78,50 @@ const createContent = async (req, res) => {
 
 const getAllContent = async (req, res) => {
   try {
-    const contents = await Content.find().select('topic tags createdAt').sort({ createdAt: -1 });
-    res.json(contents);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const query = {};
+    if (req.query.search) {
+      const searchRegex = new RegExp(req.query.search, 'i');
+      query.$or = [
+        { topic: searchRegex },
+        { tags: searchRegex }
+      ];
+    }
+    if (req.query.tag) {
+        query.tags = req.query.tag;
+    }
+    if (req.query.creatorId) { // Filter by creator
+        query.createdBy = req.query.creatorId;
+    }
+
+    const sortOptions = {};
+    if (req.query.sortBy) {
+      const parts = req.query.sortBy.split(':');
+      sortOptions[parts[0]] = parts[1] === 'desc' ? -1 : 1;
+    } else {
+      sortOptions.createdAt = -1;
+    }
+
+    const contents = await Content.find(query)
+      .populate('createdBy', 'name email')
+      .populate('lastUpdatedBy', 'name email')
+      .sort(sortOptions)
+      .skip(skip)
+      .limit(limit)
+      .select('topic tags createdAt createdBy lastUpdatedBy updatedAt');
+
+    const totalContents = await Content.countDocuments(query);
+    const totalPages = Math.ceil(totalContents / limit);
+
+    res.json({
+      contents,
+      currentPage: page,
+      totalPages,
+      totalContents,
+    });
   } catch (err) {
     console.error("Error fetching all content:", err.message, err.stack);
     res.status(500).json({ error: 'Failed to retrieve content list' });
@@ -76,7 +130,9 @@ const getAllContent = async (req, res) => {
 
 const getContentById = async (req, res) => {
     try {
-        const content = await Content.findById(req.params.id).populate('createdBy', 'name email');
+        const content = await Content.findById(req.params.id)
+            .populate('createdBy', 'name email')
+            .populate('lastUpdatedBy', 'name email');
         if (!content) {
             return res.status(404).json({ message: 'Content not found.' });
         }
@@ -92,23 +148,47 @@ const getContentById = async (req, res) => {
 
 const updateContent = async (req, res) => {
   try {
-    const { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations, simplifiedVersions, visualMaps } = req.body;
+    const { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations } = req.body;
     const contentId = req.params.id;
     let content = await Content.findById(contentId);
     if (!content) {
       return res.status(404).json({ error: 'Content not found.' });
     }
+    
+    const oldValues = {
+        topic: content.topic,
+        originalTextLength: content.originalText.length,
+        tags: [...content.tags],
+        // Add more fields if needed for detailed audit
+    };
+
     if (topic) content.topic = topic.toLowerCase().trim().replace(/\s+/g, '-');
     if (originalText) content.originalText = originalText;
     if (tags !== undefined) content.tags = tags;
     if (imageUrls !== undefined) content.media.imageUrls = imageUrls;
     if (videoExplainers !== undefined) content.videoExplainers = videoExplainers;
     if (audioNarrations !== undefined) content.audioNarrations = audioNarrations;
-    if (simplifiedVersions !== undefined) content.simplifiedVersions = simplifiedVersions;
-    if (visualMaps !== undefined) content.visualMaps = visualMaps;
-    content.lastUpdatedBy = req.user?._id;
+    
+    content.lastUpdatedBy = req.user._id;
     const updatedContent = await content.save();
-    res.json(updatedContent);
+
+    await logAction(
+      req.user.id,
+      'UPDATE_CONTENT',
+      'Content',
+      updatedContent._id,
+      { 
+        topic: updatedContent.topic, 
+        fieldsUpdated: Object.keys(req.body), 
+        // oldValues: oldValues // Optionally log old values if diffing is needed
+      },
+      req.ip
+    );
+
+    const populatedContent = await Content.findById(updatedContent._id)
+                                    .populate('createdBy', 'name email')
+                                    .populate('lastUpdatedBy', 'name email');
+    res.json(populatedContent);
   } catch (err) {
     console.error("Error updating content:", err.message, err.stack);
     if (err.kind === 'ObjectId') { return res.status(400).json({ message: 'Invalid content ID format.' }); }
@@ -121,7 +201,18 @@ const deleteContent = async (req, res) => {
     const contentId = req.params.id;
     const content = await Content.findById(contentId);
     if (!content) { return res.status(404).json({ error: 'Content not found.' }); }
+
+    const deletedTopic = content.topic; // Capture before deletion for audit log
     await content.deleteOne();
+
+    await logAction(
+      req.user.id,
+      'DELETE_CONTENT',
+      'Content',
+      contentId,
+      { topic: deletedTopic },
+      req.ip
+    );
     res.json({ message: 'Content removed successfully.' });
   } catch (err) {
     console.error("Error deleting content:", err.message, err.stack);
@@ -134,8 +225,11 @@ const getContentByTopic = async (req, res) => {
     try {
         const topicSlug = req.params.topic.toLowerCase().trim();
         const user = req.user ? await User.findById(req.user.id).select('preferences') : null;
-        const content = await Content.findOne({ topic: topicSlug }).populate('createdBy', 'name');
+        const content = await Content.findOne({ topic: topicSlug })
+                                .populate('createdBy', 'name email')
+                                .populate('lastUpdatedBy', 'name email');
         if (!content) { return res.status(404).json({ message: `Content not found for topic: ${topicSlug}` });}
+        
         let responseContent = { ...content.toObject() };
         if (user?.preferences?.readingLevel) {
             const cacheLevelKey = mapReadingLevelToCacheKey(user.preferences.readingLevel);
@@ -187,16 +281,16 @@ const simplifyContent = async (req, res) => {
     }
 
     console.log(`Generating new simplified version (Gemini) for: ${contentDoc.topic}, prompt level: "${promptLevelDescription}"`);
-    const simplificationPrompt = `You are an expert tutor... [Your full simplification prompt here, same as before] ... Original Text:\n---\n${contentDoc.originalText}\n---\n\nSimplified Text (for ${promptLevelDescription} understanding):`;
-    const safetySettings = [ /* ... */ { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, ];
-    const generationConfig = { /* ... */ };
+    const simplificationPrompt = `You are an expert tutor specialized in adapting complex educational text for neurodivergent learners. Your goal is to simplify the following text while preserving its core meaning and accuracy. Adapt your language to suit a '${promptLevelDescription}' reading level. Use clear, concise sentences, and break down complex ideas into smaller, digestible parts. Avoid jargon where possible, or explain it simply if essential. If relevant, use analogies or simple examples. Ensure the tone is encouraging and supportive. Do NOT add any preambles like "Okay, here's the simplified version". Directly provide the simplified text. Original Text:\n---\n${contentDoc.originalText}\n---\n\nSimplified Text (for ${promptLevelDescription} understanding):`;
+    const safetySettings = [ { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, ];
+    const generationConfig = { temperature: 0.3, maxOutputTokens: 2000 }; // Adjusted for potentially longer simplified texts
+    
     const result = await textModel.generateContent({ contents: [{ role: "user", parts: [{ text: simplificationPrompt }] }], generationConfig, safetySettings });
     const response = result.response;
 
     if (!response || !response.candidates || response.candidates.length === 0 || !response.candidates[0].content?.parts) {
-        // ... [Same detailed error handling for Gemini response as before] ...
         const blockReason = response?.promptFeedback?.blockReason || response?.candidates?.[0]?.finishReason;
-        console.error("Content generation issue with Google Gemini (simplify):", { blockReason, fullResponse: JSON.stringify(response, null, 2) });
+        console.error("Content generation issue with Google Gemini (simplify):", { blockReason, safetyRatings: response?.candidates?.[0]?.safetyRatings, fullResponse: JSON.stringify(response, null, 2) });
         let userMessage = 'AI failed to generate simplified content.';
         if (blockReason === "SAFETY" || response?.candidates?.[0]?.finishReason === "SAFETY") { userMessage = 'Content could not be simplified due to safety filters.';}
         else if (blockReason) { userMessage = `Content generation blocked: ${blockReason}.`;}
@@ -204,11 +298,20 @@ const simplifyContent = async (req, res) => {
     }
     const simplifiedText = response.candidates[0].content.parts.map(part => part.text).join("").trim();
     contentDoc.simplifiedVersions.push({ level: cacheLevelKey, text: simplifiedText, createdAt: new Date() });
-    if (req.user?._id) contentDoc.lastUpdatedBy = req.user._id;
+    contentDoc.lastUpdatedBy = req.user._id; // Log who triggered the update
     await contentDoc.save();
+
+    await logAction(
+        req.user.id,
+        'GENERATE_SIMPLIFIED_CONTENT',
+        'Content',
+        contentDoc._id,
+        { topic: contentDoc.topic, level: cacheLevelKey },
+        req.ip
+    );
+
     res.json({ simplifiedText, level: cacheLevelKey });
   } catch (err) {
-    // ... [Same detailed error handling for Gemini API calls as before] ...
     console.error("Error in simplifyContent (Google Gemini):", err.message, err.stack);
     let userMessage = 'Failed to simplify content using Google AI.';
     if (err.message.toLowerCase().includes("api key") || err.message.toLowerCase().includes("permission denied")) { userMessage = "Google AI API key is invalid or not authorized."; return res.status(401).json({ error: userMessage });}
@@ -217,7 +320,6 @@ const simplifyContent = async (req, res) => {
   }
 };
 
-// --- UPDATED generateVisualMap with new prompt ---
 const generateVisualMap = async (req, res) => {
   if (!GOOGLE_API_KEY || !textModel) {
     console.error("Google AI SDK (textModel) not initialized for generateVisualMap.");
@@ -235,8 +337,6 @@ const generateVisualMap = async (req, res) => {
     if (existingMap) { return res.json({ visualMap: existingMap }); }
 
     console.log(`Generating new visual map (Gemini) for: ${contentDoc.topic}, format: ${format}`);
-
-    // ***** THIS IS THE CRUCIAL PROMPT UPDATE *****
     const visualMapPrompt = `
       You are an expert in creating educational diagrams.
       From the following educational text about "${contentDoc.topic.replace(/-/g, ' ')}", generate **valid MermaidJS mindmap syntax**.
@@ -257,22 +357,19 @@ const generateVisualMap = async (req, res) => {
 
       The output should ONLY be the MermaidJS code block itself, starting with the word "mindmap". Do not include any other explanatory text, markdown formatting (like \`\`\`mermaid or \`\`\`), or any words before or after the MermaidJS code. Just the pure MermaidJS syntax.
 
-      Original Text (excerpt):
+      Original Text (excerpt, max 3500 chars):
       ---
       ${contentDoc.originalText.substring(0, 3500)} 
       ---
 
       MermaidJS Mindmap Code:
     `;
-    // **********************************************
-
-    const safetySettings = [ /* ... */ { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, ];
-    const generationConfig = { temperature: 0.1, maxOutputTokens: 1500 }; // Low temp for structured output
+    const safetySettings = [ { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, ];
+    const generationConfig = { temperature: 0.1, maxOutputTokens: 1500 }; 
     const result = await textModel.generateContent({ contents: [{ role: "user", parts: [{ text: visualMapPrompt }] }], generationConfig, safetySettings });
     const response = result.response;
 
     if (!response || !response.candidates || response.candidates.length === 0 || !response.candidates[0].content?.parts) {
-        // ... [Same detailed error handling for Gemini response as before] ...
         const blockReason = response?.promptFeedback?.blockReason || response?.candidates?.[0]?.finishReason;
         console.error("Visual map generation issue with Google Gemini:", { blockReason, fullResponse: JSON.stringify(response, null, 2) });
         let userMessage = 'AI failed to generate visual map.';
@@ -281,19 +378,25 @@ const generateVisualMap = async (req, res) => {
         return res.status(400).json({ error: userMessage });
     }
     let mermaidData = response.candidates[0].content.parts.map(part => part.text).join("").trim();
-    // Clean potential markdown backticks
     mermaidData = mermaidData.replace(/^```mermaid\s*\n?([\s\S]*?)\n?```$/, '$1').trim();
     mermaidData = mermaidData.replace(/^```\s*\n?([\s\S]*?)\n?```$/, '$1').trim();
 
-    console.log("[Controller] Gemini produced Mermaid data:", mermaidData.substring(0, 200) + "..."); // Log what Gemini returned
-
     const newVisualMap = { format, data: mermaidData, createdAt: new Date(), notes: "AI-Generated (Gemini)" };
     contentDoc.visualMaps.push(newVisualMap);
-    if (req.user?._id) contentDoc.lastUpdatedBy = req.user._id;
+    contentDoc.lastUpdatedBy = req.user._id;
     await contentDoc.save();
+
+    await logAction(
+        req.user.id,
+        'GENERATE_VISUAL_MAP',
+        'Content',
+        contentDoc._id,
+        { topic: contentDoc.topic, format: format },
+        req.ip
+    );
+
     res.json({ visualMap: newVisualMap });
   } catch (err) {
-    // ... [Same detailed error handling for Gemini API calls as before] ...
     console.error("Error in generateVisualMap (Google Gemini):", err.message, err.stack);
     let userMessage = 'Failed to generate visual map using Google AI.';
     if (err.message.toLowerCase().includes("api key") || err.message.toLowerCase().includes("permission denied")) { userMessage = "Google AI API key is invalid or not authorized."; return res.status(401).json({ error: userMessage });}
@@ -303,7 +406,22 @@ const generateVisualMap = async (req, res) => {
 };
 
 const generateAudioNarration = async (req, res) => {
-    res.status(501).json({ error: "Audio narration not implemented." });
+    // Placeholder - Implement actual audio generation and storage if needed
+    // For now, it's more of a manual URL entry on admin edit page.
+    // If AI audio generation is implemented, log it similarly.
+    const { contentId, textToNarrate } = req.body;
+    if (!contentId || !textToNarrate) {
+        return res.status(400).json({error: "Content ID and text are required."});
+    }
+    // Example: AI call here, save URL
+    // const audioUrl = await someAIService.generateSpeech(textToNarrate);
+    // const content = await Content.findById(contentId);
+    // content.audioNarrations.push({ url: audioUrl, /* other fields */ });
+    // content.lastUpdatedBy = req.user._id;
+    // await content.save();
+    // await logAction(req.user.id, 'GENERATE_AUDIO_NARRATION', 'Content', contentId, {}, req.ip);
+
+    res.status(501).json({ error: "AI Audio narration generation not fully implemented. URLs can be added manually." });
 };
 const findVideoExplainers = async (req, res) => {
   res.status(501).json({ error: "Video explainer sourcing not implemented." });

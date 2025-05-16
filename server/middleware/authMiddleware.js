@@ -1,11 +1,9 @@
 // ===== File: /middleware/authMiddleware.js =====
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const User = require('../models/User'); // Adjust path as needed
 
-exports.protect = async (req, res, next) => {
-  // ... (existing protect function remains unchanged)
+const protect = async (req, res, next) => {
   let token;
-
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     try {
       token = req.headers.authorization.split(' ')[1];
@@ -16,27 +14,37 @@ exports.protect = async (req, res, next) => {
       }
       next();
     } catch (error) {
-      console.error('Token verification failed:', error.message);
-      if (error.name === 'JsonWebTokenError') {
-        return res.status(401).json({ error: 'Not authorized, token invalid' });
-      }
-      if (error.name === 'TokenExpiredError') {
-        return res.status(401).json({ error: 'Not authorized, token expired' });
-      }
+      console.error('Token verification failed:', error);
       return res.status(401).json({ error: 'Not authorized, token failed' });
     }
   }
-
   if (!token) {
-    res.status(401).json({ error: 'Not authorized, no token provided' });
+    return res.status(401).json({ error: 'Not authorized, no token' });
   }
 };
 
-// --- NEW: isAdmin Middleware ---
-exports.isAdmin = (req, res, next) => {
+const isAdmin = (req, res, next) => {
   if (req.user && req.user.role === 'admin') {
     next();
   } else {
-    res.status(403).json({ error: 'Not authorized. Admin privileges required.' });
+    res.status(403).json({ error: 'Not authorized as an admin' });
   }
 };
+
+const isCreator = (req, res, next) => { 
+  if (req.user && req.user.role === 'creator') {
+    next();
+  } else {
+    res.status(403).json({ error: 'Not authorized as a creator' });
+  }
+};
+
+const isCreatorOrAdmin = (req, res, next) => {
+  if (req.user && (req.user.role === 'admin' || req.user.role === 'creator')) {
+    next();
+  } else {
+    res.status(403).json({ error: 'Not authorized as an admin or creator' });
+  }
+};
+
+module.exports = { protect, isAdmin, isCreator, isCreatorOrAdmin };

@@ -2,10 +2,11 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { createContent } from '../../services/contentService';
-import TagInput from '../../components/admin/TagInput'; // Import TagInput
-import DynamicUrlInput from '../../components/admin/DynamicUrlInput'; // Import DynamicUrlInput
+import TagInput from '../../components/admin/TagInput';
+import DynamicUrlInput from '../../components/admin/DynamicUrlInput';
+import { toast } from 'react-toastify';
 
-// FormField component (can be kept here or moved to a common components folder if not already)
+
 const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder, name, rows = 3 }) => (
   <div className="form-field-default">
     <label htmlFor={id || name} className="form-label-default">{label}{required && <span className="text-red-500 ml-1">*</span>}</label>
@@ -13,22 +14,23 @@ const FormField = ({ id, label, type = 'text', value, onChange, required = false
     ) : ( <input type={type} id={id || name} name={name || id} value={value} onChange={onChange} required={required} placeholder={placeholder} className="form-input-default"/> )}
   </div>
 );
-const ErrorAlert = ({ message }) => ( /* ... same as before ... */
+const ErrorAlert = ({ message }) => (
     <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700 dark:bg-red-900/20 dark:border-red-700 dark:text-red-300 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link" role="alert">{message}</div>
 );
 
 const AdminCreateContentPage = () => {
   const [formData, setFormData] = useState({
-    topic: '',
+    topic: '', // This will be the human-readable title, slug generated on backend
     originalText: '',
-    // tags and imageUrls will be managed by their respective components
   });
-  const [tags, setTags] = useState([]); // State for tags
-  const [imageUrls, setImageUrls] = useState([]); // State for image URLs
+  const [tags, setTags] = useState([]);
+  const [imageUrls, setImageUrls] = useState([]);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null); // For form-level persistent errors
   const navigate = useNavigate();
+  const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
+
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -38,29 +40,33 @@ const AdminCreateContentPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
+    setError(null); // Clear previous form error
+    // toast.dismiss(); // Clear existing toasts
 
     const contentData = {
       ...formData,
-      topic: formData.topic.trim(),
-      tags: tags, // Use the state variable
-      imageUrls: imageUrls, // Use the state variable
-      videoExplainers: [],
-      audioNarrations: [],
+      topic: formData.topic.trim(), // Send human-readable title
+      tags: tags,
+      imageUrls: imageUrls.filter(url => url && url.trim() !== ''), // Filter out empty strings
+      videoExplainers: [], // Initialize as empty, can be added in edit
+      audioNarrations: [], // Initialize as empty, can be added in edit
     };
 
     if (!contentData.topic || !contentData.originalText) {
-        setError("Topic and Original Text are required.");
+        setError("Topic Title and Original Text are required.");
+        toast.error("Topic Title and Original Text are required.");
         setLoading(false);
         return;
     }
 
     try {
       await createContent(contentData);
-      alert('Content created successfully!');
-      navigate('/admin/content');
+      toast.success('Content created successfully!');
+      navigate(`${basePath}/content`); // Navigate back to the list for the current role
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create content.');
+      const errMsg = err.response?.data?.error || 'Failed to create content.';
+      setError(errMsg); // Set form error for display
+      toast.error(errMsg);
     } finally {
       setLoading(false);
     }
@@ -68,25 +74,27 @@ const AdminCreateContentPage = () => {
 
   return (
     <div className="space-y-6">
-      <Link to="/admin/content" className="text-sm inline-block mb-2">← Back to Content List</Link>
-      <h1>Create New Content</h1>
+      <Link to={`${basePath}/content`} className="text-sm inline-block mb-2 hover:underline text-[var(--color-link)]">
+        ← Back to Content List
+      </Link>
+      <h1 className="text-2xl font-semibold">Create New Content</h1>
 
       <form onSubmit={handleSubmit} className="card max-w-2xl mx-auto p-6 md:p-8">
         {error && <ErrorAlert message={error} />}
 
-        <FormField name="topic" label="Topic Title" value={formData.topic} onChange={handleChange} required placeholder="e.g., Photosynthesis Basics"/>
+        <FormField name="topic" label="Topic Title (human-readable)" value={formData.topic} onChange={handleChange} required placeholder="e.g., Photosynthesis Basics"/>
         <FormField name="originalText" label="Original Content Text" value={formData.originalText} onChange={handleChange} textarea rows="10" required placeholder="Enter the full educational text here..."/>
         
         <TagInput
           initialTags={tags}
-          onChange={setTags} // Pass the setter function
+          onChange={setTags}
           label="Tags"
           placeholder="Add relevant tags"
         />
 
         <DynamicUrlInput
           initialUrls={imageUrls}
-          onChange={setImageUrls} // Pass the setter function
+          onChange={setImageUrls}
           label="Image URLs"
           placeholder="https://example.com/image.jpg"
         />

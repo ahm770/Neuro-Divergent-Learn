@@ -26,37 +26,37 @@ const app = express();
 
 // --- Middleware ---
 const corsOptions = {
-  origin: [ // Add your frontend URLs here
+  origin: [ 
     "http://127.0.0.1:3000",
     "http://localhost:3000",
     "http://[::1]:3000",
-    process.env.FRONTEND_URL, // If you have one in .env for deployed frontend
-    "https://opulent-garbanzo-975vgqvp4jj4cg6x-3000.app.github.dev" // Example Codespaces URL
-  ].filter(Boolean), // Filter out undefined/null values
+    process.env.FRONTEND_URL, 
+    "https://opulent-garbanzo-975vgqvp4jj4cg6x-3000.app.github.dev" 
+  ].filter(Boolean), 
   credentials: true,
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   preflightContinue: false,
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
-app.use(helmet()); // Adds various security HTTP headers
-app.use(express.json({ limit: '10mb' })); // For parsing application/json, increased limit for potential media uploads
-app.use(express.urlencoded({ extended: true, limit: '10mb' })); // For parsing application/x-www-form-urlencoded
+app.use(helmet()); 
+app.use(express.json({ limit: '10mb' })); 
+app.use(express.urlencoded({ extended: true, limit: '10mb' })); 
 
 if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev')); // HTTP request logger middleware (useful for development)
+  app.use(morgan('dev')); 
 }
 
 // --- Routes ---
 const authRoutes = require('./routes/authRoutes');
 const contentRoutes = require('./routes/contentRoutes');
 const qaRoutes = require('./routes/qaRoutes');
-// const userRoutes = require('./routes/userRoutes'); // If you create separate user management routes
+const userRoutes = require('./routes/userRoutes'); // Added userRoutes
 
 app.use('/api/auth', authRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/qa', qaRoutes);
-// app.use('/api/users', userRoutes);
+app.use('/api/users', userRoutes); // Added userRoutes registration
 
 
 // --- Database Connection ---
@@ -64,19 +64,17 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected successfully."))
   .catch(err => {
     console.error("MongoDB connection error:", err.message);
-    process.exit(1); // Exit if DB connection fails
+    process.exit(1); 
   });
 
 // --- Basic Welcome Route ---
 app.get("/", (req, res) => res.send("Accessible Learning Portal API is running."));
 
-// --- Global Error Handler (simple example) ---
-// This should be the last middleware
+// --- Global Error Handler ---
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err.stack);
   res.status(err.status || 500).json({
     error: err.message || 'An unexpected error occurred.',
-    // stack: process.env.NODE_ENV === 'development' ? err.stack : undefined // Optionally show stack in dev
   });
 });
 

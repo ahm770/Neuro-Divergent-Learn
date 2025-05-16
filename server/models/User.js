@@ -9,15 +9,15 @@ const userSchema = new mongoose.Schema({
 
   role: {
     type: String,
-    enum: ['user', 'admin'],
+    enum: ['user', 'creator', 'admin'], // Added 'creator'
     default: 'user'
   },
 
   preferences: {
     readingLevel: { type: String, default: 'basic', enum: ['basic', 'intermediate', 'advanced'] },
     fontSize: { type: String, default: 'medium', enum: ['small', 'medium', 'large', 'xlarge'] },
-    theme: { type: String, default: 'light', enum: ['light', 'dark', 'high-contrast'] }, // Removed 'dyslexia' from here if it's a separate font toggle
-    dyslexiaFontEnabled: { type: Boolean, default: false }, // NEW field for dyslexia font
+    theme: { type: String, default: 'light', enum: ['light', 'dark', 'high-contrast'] },
+    dyslexiaFontEnabled: { type: Boolean, default: false },
     preferredContentMode: { type: String, default: 'text', enum: ['text', 'video', 'visual', 'audio']},
     ttsEnabled: { type: Boolean, default: false }
   },

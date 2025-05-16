@@ -1,11 +1,11 @@
 // src/components/common/Navbar.jsx
-import React from 'react'; // Removed useState, useEffect, useRef if using HeadlessUI fully
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Menu, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 
-const UserIcon = () => ( /* ... same as before ... */
+const UserIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
       <path fillRule="evenodd" d="M18.685 19.097A9.723 9.723 0 0 0 21.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 0 0 3.065 7.097A9.716 9.716 0 0 0 12 21.75a9.716 9.716 0 0 0 6.685-2.653Zm-12.54-1.285A7.486 7.486 0 0 1 12 15a7.486 7.486 0 0 1 5.855 2.812A8.224 8.224 0 0 1 12 20.25a8.224 8.224 0 0 1-5.855-2.438ZM15.75 9a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" clipRule="evenodd" />
     </svg>
@@ -20,28 +20,26 @@ const Navbar = () => {
         navigate('/login');
     };
 
-    // Button styles for navbar items (example)
     const navLinkClass = "text-white hover:text-opacity-80 transition-opacity duration-150";
     const navButtonClass = "bg-white text-[var(--color-link)] hover:bg-opacity-90 dark:text-primary dark:hover:bg-slate-200 font-semibold py-1 px-3 rounded text-sm";
-    // High-contrast specific for signup button if needed, or rely on global button theming
-    const hcNavLinkClass = "body.theme-high-contrast & { text-[var(--color-hc-text)] }"; // This is pseudo-css
-    const hcNavButtonClass = "body.theme-high-contrast & { background-color: var(--color-hc-link); color: var(--color-hc-background); }";
-
 
     return (
         <nav className="bg-primary text-white dark:bg-slate-900 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:text-hc-text body-theme-high-contrast:border-b body-theme-high-contrast:border-hc-border shadow-md">
-             {/* The body-theme-high-contrast:... classes are illustrative; actual application happens via body class + CSS vars */}
             <div className="container mx-auto px-4 py-3 flex justify-between items-center">
                 <Link to="/" className={`text-xl font-bold ${navLinkClass}`}>
                     Accessible Learning
                 </Link>
                 <div className="space-x-2 sm:space-x-4 flex items-center">
                     {isAuthenticated && user?.role === 'admin' && (
-                        <Link to="/admin" className={navLinkClass}>Admin</Link>
+                        <Link to="/admin" className={navLinkClass}>Admin Panel</Link>
                     )}
+                    {isAuthenticated && user?.role === 'creator' && (
+                        <Link to="/creator/dashboard" className={navLinkClass}>Creator Studio</Link>
+                    )}
+
                     {isAuthenticated ? (
                         <>
-                            <Link to="/dashboard" className={navLinkClass}>Dashboard</Link>
+                            <Link to="/dashboard" className={navLinkClass}>My Dashboard</Link>
                             <Menu as="div" className="relative inline-block text-left">
                                 <div>
                                     <Menu.Button className={`inline-flex w-full justify-center items-center space-x-1 rounded-md px-1 py-1 sm:px-2 text-sm font-medium ${navLinkClass} focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-75`}>
@@ -65,6 +63,7 @@ const Navbar = () => {
                                              <div className="px-3 py-2">
                                                 <p className="text-xs text-[var(--color-text-secondary)]">Signed in as</p>
                                                 <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{user?.email}</p>
+                                                <p className="text-xs text-[var(--color-text-secondary)] capitalize">Role: {user?.role}</p>
                                             </div>
                                         </div>
                                         <div className="px-1 py-1">

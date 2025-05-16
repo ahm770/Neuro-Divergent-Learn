@@ -1,0 +1,6 @@
+
+the search, sorting and filtering doesnt work in the content management and user management pages,  make sure the frontend and server are in sync there.
+Also dont forget to add a back arrow for all the management pages.
+Lets also fetch real data on the dashboard page for users and also add search, explore, etc for the users.
+Also when a content is created or updated either admin or creator we go to that product or user page. 
+Also lets add audit to the models themselves.

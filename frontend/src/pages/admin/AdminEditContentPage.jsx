@@ -1,13 +1,12 @@
 // src/pages/admin/AdminEditContentPage.jsx
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { getContentByIdForAdmin, updateContent } from '../../services/contentService';
+import { useParams, Link, useNavigate } from 'react-router-dom'; // Added useNavigate
+import { getContentByIdForEditing, updateContent } from '../../services/contentService'; 
 import MermaidDiagram from '../../components/common/MermaidDiagram';
 import TagInput from '../../components/admin/TagInput';
 import DynamicUrlInput from '../../components/admin/DynamicUrlInput';
-import { toast } from 'react-toastify'; // Import react-toastify
+import { toast } from 'react-toastify';
 
-// Reusable FormField component
 const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder, disabled = false, name, rows = 3, children }) => (
   <div className="form-field-default">
     <label htmlFor={id || name} className="form-label-default">{label}{required && !disabled && <span className="text-red-500 ml-1">*</span>}</label>
@@ -23,20 +22,20 @@ const FormField = ({ id, label, type = 'text', value, onChange, required = false
 
 const LoadingMessage = () => <div className="p-6 text-center text-[var(--color-text-secondary)]">Loading content details...</div>;
 
-// ErrorAlert for initial page load failure if needed, but toast primarily handles errors
-const PageLoadError = ({ message }) => (
+const PageLoadError = ({ message, basePath }) => ( // Added basePath
     <div className="p-6 text-center card my-4">
         <p className="text-red-600 dark:text-red-400 body-theme-high-contrast:text-hc-link mb-4">{message}</p>
-        <Link to="/admin/content" className="button-secondary text-sm">Go back to list</Link>
+        <Link to={`${basePath}/content`} className="button-secondary text-sm">Go back to list</Link>
     </div>
 );
 
 
 const AdminEditContentPage = () => {
   const { contentId } = useParams();
-
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    topic: '',
+    topicSlug: '', // Store the slug separately from display title
+    displayTopic: '', // For the input field
     originalText: '',
     videoExplainers: [],
     audioNarrations: [],
@@ -44,21 +43,22 @@ const AdminEditContentPage = () => {
     visualMaps: [],
   });
   const [tags, setTags] = useState([]);
-  const [imageUrls, setImageUrls] = useState([]); // For DynamicUrlInput (editable)
-  const [initialImageGallery, setInitialImageGallery] = useState([]); // For gallery preview of saved images
+  const [imageUrls, setImageUrls] = useState([]);
+  const [initialImageGallery, setInitialImageGallery] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  // Error state is mostly handled by toasts, but can be used for critical page load failures
+  
+  const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
 
   useEffect(() => {
     const fetchContent = async () => {
       setLoading(true);
-      // toast.dismiss(); // Optional: clear any existing toasts on new fetch
       try {
-        const data = await getContentByIdForAdmin(contentId);
+        const data = await getContentByIdForEditing(contentId);
         setFormData({
-          topic: data.topic || '',
+          topicSlug: data.topic || '', // This is the slug from DB
+          displayTopic: data.topic ? data.topic.replace(/-/g, ' ') : '', // Convert slug to human-readable for display
           originalText: data.originalText || '',
           videoExplainers: data.videoExplainers || [],
           audioNarrations: data.audioNarrations || [],
@@ -72,9 +72,6 @@ const AdminEditContentPage = () => {
       } catch (err) {
         const fetchErrorMsg = err.response?.data?.error || `Failed to fetch content (ID: ${contentId}).`;
         toast.error(fetchErrorMsg);
-        console.error("Fetch content for edit error:", err);
-        // If fetch fails catastrophically, we might still want to set a page-level error
-        // For now, toast is primary.
       } finally {
         setLoading(false);
       }
@@ -84,18 +81,25 @@ const AdminEditContentPage = () => {
     } else {
         toast.error("Content ID is missing.");
         setLoading(false);
+        navigate(`${basePath}/content`);
     }
-  }, [contentId]);
+  }, [contentId, basePath, navigate]);
+
+  const handleDisplayTopicChange = (e) => {
+    const newDisplayTopic = e.target.value;
+    setFormData(prev => ({ 
+        ...prev, 
+        displayTopic: newDisplayTopic,
+        // topicSlug will be updated on submit based on displayTopic, or backend handles slug generation
+    }));
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
-
-  const handleArrayChange = (setterFunc, fieldData) => {
-    setterFunc(fieldData);
-  };
-
+  
+  const handleArrayChange = (setterFunc, fieldData) => setterFunc(fieldData);
   const handleVideoChange = (index, field, value) => handleArrayChange(setFormData, prev => ({ ...prev, videoExplainers: prev.videoExplainers.map((video, i) => i === index ? { ...video, [field]: value } : video)}));
   const handleAddVideoField = () => handleArrayChange(setFormData, prev => ({ ...prev, videoExplainers: [...prev.videoExplainers, { source: 'youtube', url: '', title: '', description: '' }]}));
   const handleRemoveVideoField = (index) => handleArrayChange(setFormData, prev => ({ ...prev, videoExplainers: prev.videoExplainers.filter((_, i) => i !== index)}));
@@ -105,14 +109,16 @@ const AdminEditContentPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.topic || !formData.originalText) {
+    if (!formData.displayTopic || !formData.originalText) {
         toast.error("Topic Title and Original Text are required.");
         return;
     }
     setSaving(true);
 
     const contentDataToUpdate = {
-      topic: formData.topic,
+      // Send the human-readable title; backend will re-slugify it.
+      // This allows users to change the human-readable title naturally.
+      topic: formData.displayTopic.trim(), 
       originalText: formData.originalText,
       tags: tags,
       imageUrls: imageUrls.filter(url => url && url.trim() !== ''),
@@ -123,11 +129,11 @@ const AdminEditContentPage = () => {
     try {
       const updatedContent = await updateContent(contentId, contentDataToUpdate);
       toast.success('Content updated successfully!');
-      
       if (updatedContent) {
         setFormData(prev => ({
             ...prev,
-            topic: updatedContent.topic || prev.topic,
+            topicSlug: updatedContent.topic || prev.topicSlug,
+            displayTopic: updatedContent.topic ? updatedContent.topic.replace(/-/g, ' ') : prev.displayTopic,
             originalText: updatedContent.originalText || prev.originalText,
             videoExplainers: updatedContent.videoExplainers || [],
             audioNarrations: updatedContent.audioNarrations || [],
@@ -142,36 +148,35 @@ const AdminEditContentPage = () => {
     } catch (err) {
       const updateErrorMsg = err.response?.data?.error || 'Failed to update content.';
       toast.error(updateErrorMsg);
-      console.error("Update content error:", err);
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading && !formData.topic) return <LoadingMessage />;
-  if (!loading && !formData.topic && contentId) {
-      return <PageLoadError message={`Failed to load content with ID: ${contentId}. It might have been deleted or an error occurred.`} />
+  if (loading && !formData.displayTopic) return <LoadingMessage />;
+  if (!loading && !formData.displayTopic && contentId) {
+      return <PageLoadError message={`Failed to load content with ID: ${contentId}. It might have been deleted or an error occurred.`} basePath={basePath} />
   }
 
   return (
     <div className="space-y-6 pb-12">
-      {/* ToastContainer is in App.js */}
       <div className="flex justify-between items-center mb-2">
-        <Link to="/admin/content" className="text-sm">← Back to Content List</Link>
+        <Link to={`${basePath}/content`} className="text-sm hover:underline text-[var(--color-link)]">
+            ← Back to Content List
+        </Link>
       </div>
-      <h1>Edit Content: <span className="capitalize text-[var(--color-link)]">{formData.topic.replace(/-/g,' ') || "Loading..."}</span></h1>
+      <h1 className="text-2xl font-semibold">Edit Content: <span className="capitalize text-[var(--color-link)]">{formData.displayTopic || "Loading..."}</span></h1>
 
       <form onSubmit={handleSubmit} className="card max-w-3xl mx-auto p-6 md:p-8">
         <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
             <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Core Content</legend>
             <FormField 
-              name="topicDisplay"
-              label="Topic Title" 
-              value={formData.topic.replace(/-/g,' ')}
-              onChange={(e) => {
-                  setFormData(prev => ({...prev, topic: e.target.value.toLowerCase().trim().replace(/\s+/g, '-')}));
-              }} 
+              name="displayTopic"
+              label="Topic Title (human-readable)" 
+              value={formData.displayTopic} // Use displayTopic for input
+              onChange={handleDisplayTopicChange} // Use specific handler
               required 
+              placeholder="e.g. Photosynthesis For Beginners"
             />
             <FormField name="originalText" label="Original Content Text" value={formData.originalText} onChange={handleChange} textarea rows="10" required />
             <TagInput 
@@ -179,14 +184,13 @@ const AdminEditContentPage = () => {
               onChange={(newTags) => handleArrayChange(setTags, newTags)} 
               label="Tags"
             />
-            <DynamicUrlInput // This component shows previews for URLs being edited
+            <DynamicUrlInput
               initialUrls={imageUrls} 
               onChange={(newUrls) => handleArrayChange(setImageUrls, newUrls)} 
               label="Image URLs (Editable)" 
             />
         </fieldset>
 
-        {/* Gallery Preview of Saved Images */}
         {initialImageGallery && initialImageGallery.length > 0 && (
             <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
                 <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Current Saved Images</legend>
@@ -206,12 +210,11 @@ const AdminEditContentPage = () => {
                     ))}
                 </div>
                 <p className="text-xs text-[var(--color-text-secondary)] mt-2">
-                    To change images, edit the "Image URLs (Editable)" section above and save.
+                    To change images, edit the "Image URLs (Editable)" section above and save. New images will appear here after saving.
                 </p>
             </fieldset>
         )}
 
-        {/* Video Explainers Fieldset */}
         <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
           <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Video Explainers</legend>
            {formData.videoExplainers.map((video, index) => (
@@ -232,7 +235,6 @@ const AdminEditContentPage = () => {
           <button type="button" onClick={handleAddVideoField} className="button-secondary text-sm">+ Add Video Explainer</button>
         </fieldset>
 
-        {/* Audio Narrations Fieldset */}
         <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
             <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Audio Narrations (Manual URLs)</legend>
             {formData.audioNarrations.map((audio, index) => (
@@ -242,9 +244,11 @@ const AdminEditContentPage = () => {
                 </div>
             ))}
             <button type="button" onClick={handleAddAudioField} className="button-secondary text-sm">+ Add Audio Narration URL</button>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-2">
+                Note: AI-generated audio is handled via the "Audio" mode on the content consumption page. These fields are for manually added URLs.
+            </p>
         </fieldset>
         
-        {/* Read-Only AI Sections */}
          {(formData.simplifiedVersions?.length > 0 || formData.visualMaps?.length > 0) && (
           <div className="space-y-6 mt-6">
             {formData.simplifiedVersions?.length > 0 && (
@@ -261,6 +265,9 @@ const AdminEditContentPage = () => {
                     </div>
                   </div>
                 ))}
+                 <p className="text-xs text-[var(--color-text-secondary)] mt-2">
+                    These are generated on-demand by users/AI via the content consumption page. They are displayed here for review.
+                </p>
               </fieldset>
             )}
 
@@ -273,7 +280,7 @@ const AdminEditContentPage = () => {
                         <p className="text-sm font-semibold text-[var(--color-text-primary)]">Format: <span className="capitalize font-normal bg-secondary/10 text-secondary dark:bg-secondary-light/20 dark:text-secondary-light px-2 py-0.5 rounded-full text-xs body-theme-high-contrast:bg-hc-link body-theme-high-contrast:text-hc-background">{vMap.format}</span></p>
                         <p className="text-xs text-[var(--color-text-secondary)]">{new Date(vMap.createdAt).toLocaleString()}</p>
                     </div>
-                    <div className="mt-1 p-2 bg-[var(--color-card-background)] border border-[var(--color-border)] rounded max-h-[400px] overflow-y-auto"> {/* Increased max-h */}
+                    <div className="mt-1 p-2 bg-[var(--color-card-background)] border border-[var(--color-border)] rounded max-h-[400px] overflow-y-auto">
                     {vMap.format === 'mermaid' ? (
                         <MermaidDiagram chartData={vMap.data} diagramId={`admin-map-${contentId}-${index}-${new Date(vMap.createdAt).getTime()}`} />  
                     ) : (
@@ -283,6 +290,9 @@ const AdminEditContentPage = () => {
                     {vMap.notes && <p className="text-xs text-[var(--color-text-secondary)] mt-1 italic">Notes: {vMap.notes}</p>}
                   </div>
                 ))}
+                 <p className="text-xs text-[var(--color-text-secondary)] mt-2">
+                    Generated on-demand by users/AI. Displayed for review.
+                </p>
               </fieldset>
             )}
           </div>

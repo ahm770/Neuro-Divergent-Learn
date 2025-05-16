@@ -1,62 +1,112 @@
 
 ===== File: /src/App.js =====
 // src/App.jsx
-import React from 'react';
-import { Routes, Route, Link, useNavigate } from 'react-router-dom';
- 
+import React, { useEffect } from 'react';
+import { Routes, Route, Link, BrowserRouter } from 'react-router-dom'; // BrowserRouter if not in index.js
+import { useAuth, AuthProvider } from './contexts/AuthContext'; // AuthProvider if not in index.js
 
-// Import Pages (Create these basic files next)
+// Import Pages
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
-import DashboardPage from './pages/DashboardPage'; // Example protected page
-import ContentPage from './pages/ContentPage'; // Example protected page
-import HomePage from './pages/HomePage'; // Public landing page
+import DashboardPage from './pages/DashboardPage';
+import ContentPage from './pages/ContentPage';
+import HomePage from './pages/HomePage';
+import UserProfilePage from './pages/UserProfilePage';
 import AdminRoute from './components/common/AdminRoute';
-import AdminDashboardPage from './pages/admin/AdminDashboardPage'; // Create this
-import AdminContentListPage from './pages/admin/AdminContentListPage'; // Create this
-import AdminCreateContentPage from './pages/admin/AdminCreateContentPage'; // Create this
-import AdminEditContentPage from './pages/admin/AdminEditContentPage'; // Create this
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import AdminContentListPage from './pages/admin/AdminContentListPage';
+import AdminCreateContentPage from './pages/admin/AdminCreateContentPage';
+import AdminEditContentPage from './pages/admin/AdminEditContentPage';
 
 // Import Components
 import ProtectedRoute from './components/common/ProtectedRoute';
-import Navbar from './components/common/Navbar'; // Create this next
+import Navbar from './components/common/Navbar';
+import SimpleMermaidTest from './components/common/SimpleMermaidTest';
+// Import react-toastify
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css'; // Import default CSS
 
-function App() {
+const App = () => { // Renamed from App to avoid conflict if AuthProvider is here
+  const { user } = useAuth();
+
+  useEffect(() => {
+    const rootEl = document.documentElement;
+    const bodyEl = document.body;
+
+    rootEl.classList.remove('dark');
+    ['font-size-small', 'font-size-medium', 'font-size-large', 'font-size-xlarge'].forEach(cls => rootEl.classList.remove(cls));
+    bodyEl.classList.remove('theme-high-contrast', 'font-dyslexic', 'theme-light');
+
+    if (user && user.preferences) {
+      const { theme, fontSize, dyslexiaFontEnabled } = user.preferences;
+
+      if (theme === 'dark') {
+        rootEl.classList.add('dark');
+      } else if (theme === 'high-contrast') {
+        bodyEl.classList.add('theme-high-contrast');
+      } else {
+        bodyEl.classList.add('theme-light'); // Default
+      }
+
+      rootEl.classList.add(`font-size-${fontSize || 'medium'}`);
+
+      if (dyslexiaFontEnabled) {
+        bodyEl.classList.add('font-dyslexic');
+      }
+    } else {
+      bodyEl.classList.add('theme-light');
+      rootEl.classList.add('font-size-medium');
+    }
+  }, [user]);
+
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar /> {/* Add Navbar */}
+       <ToastContainer
+        position="bottom-right" // Or "top-right", "top-center", etc.
+        autoClose={5000} // Auto close after 5 seconds
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="colored" // Or "light", "dark" - "colored" adapts to type (success, error)
+      />
+      <Navbar />
       <main className="flex-grow container mx-auto px-4 py-8">
         <Routes>
-          {/* Public Routes */}
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
-
-          {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
-             {/* Wrap protected routes */}
-             <Route path="/dashboard" element={<DashboardPage />} />
-             <Route path="/content/:topic" element={<ContentPage />} />
-             {/* Add other protected routes here */}
+            <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/content/:topic" element={<ContentPage />} />
+            <Route path="/profile" element={<UserProfilePage />} />
           </Route>
           <Route element={<AdminRoute />}>
-  <Route path="/admin" element={<AdminDashboardPage />} />
-  <Route path="/admin/content" element={<AdminContentListPage />} />
-  <Route path="/admin/content/create" element={<AdminCreateContentPage />} />
-  <Route path="/admin/content/edit/:contentId" element={<AdminEditContentPage />} />
-  {/* Add more admin routes as needed */}
-</Route>
-
-          {/* Catch-all/Not Found Route */}
-          <Route path="*" element={<div><h2>404 Not Found</h2><Link to="/">Go Home</Link></div>} />
+            <Route path="/admin" element={<AdminDashboardPage />} />
+            <Route path="/admin/content" element={<AdminContentListPage />} />
+            <Route path="/admin/content/create" element={<AdminCreateContentPage />} />
+            <Route path="/admin/content/edit/:contentId" element={<AdminEditContentPage />} />
+          </Route>
+          <Route path="*" element={<div className="text-center py-10"><h2 className="text-2xl font-bold">404 Not Found</h2><Link to="/" className="button-primary mt-4 inline-block">Go Home</Link></div>} />
         </Routes>
       </main>
-       <footer className="bg-gray-200 text-center p-4 mt-auto">
-         © {new Date().getFullYear()} Accessible Learning Portal
-       </footer>
+      <footer className="text-center p-4 mt-auto border-t border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm">
+        © {new Date().getFullYear()} Accessible Learning Portal.
+        {user && user.preferences && ( /* Debug info, remove for production */
+            <div className="text-xs opacity-70">
+                Theme: {user.preferences.theme}, Font: {user.preferences.fontSize}, Dyslexic: {user.preferences.dyslexiaFontEnabled ? 'On' : 'Off'}
+            </div>
+        )}
+        <SimpleMermaidTest />
+      </footer>
     </div>
   );
 }
+
+ 
 
 export default App;
 
@@ -73,130 +123,278 @@ test('renders learn react link', () => {
 
 ===== File: /src/components/UserProfile.jsx =====
 // src/components/UserProfile.jsx
-import React, { useState, useEffect } from 'react'; // Added useEffect
-import { useAuth } from '../contexts/AuthContext'; // Changed to useAuth
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
 const UserProfile = () => {
-  // Destructure what you need from the unified AuthContext
   const { user, updateUserPreferences, loading: authLoading, error: authError } = useAuth();
-  const [prefs, setPrefs] = useState({});
+  const [prefs, setPrefs] = useState({ /* ... initial prefs ... */
+    readingLevel: 'basic', fontSize: 'medium', theme: 'light',
+    dyslexiaFontEnabled: false, preferredContentMode: 'text', ttsEnabled: false,
+  });
   const [message, setMessage] = useState('');
-  const [isSaving, setIsSaving] = useState(false); // Local loading state for the save button
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    // Initialize prefs from user object when user data is available or changes
-    if (user && user.preferences) {
-      setPrefs(user.preferences);
-    } else {
-      // Set default or empty if no user/preferences (e.g., during initial load)
-      setPrefs({
-        readingLevel: 'basic',
-        fontSize: 'medium',
-        theme: 'light',
-        preferredContentMode: 'text',
-        ttsEnabled: false,
-      });
+    if (user?.preferences) {
+      setPrefs(prev => ({ ...prev, ...user.preferences }));
     }
-  }, [user]); // Re-run if user object changes
-
-  if (authLoading && !user) return <p>Loading profile...</p>; // Show loading if user is not yet fetched
-
-  if (!user) return (
-    <div>
-        <p>Please log in to view or update your profile and preferences.</p>
-        {authError && <p style={{ color: 'red' }}>Error: {authError}</p>}
-    </div>
-  );
-
+  }, [user]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setPrefs(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
+    setPrefs(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setMessage('');
-    setIsSaving(true);
+    e.preventDefault(); setMessage(''); setIsSaving(true);
     try {
       await updateUserPreferences(prefs);
       setMessage('Preferences updated successfully!');
     } catch (updateError) {
-      setMessage(`Error: ${updateError.message || 'Failed to update preferences.'}`);
-    } finally {
-      setIsSaving(false);
-    }
+      setMessage(`Error: ${updateError.message || 'Failed to update.'}`);
+    } finally { setIsSaving(false); }
   };
 
+  if (authLoading && !user) return <p className="text-center p-4">Loading profile...</p>;
+  if (!user) return <p className="text-center p-4">Please log in.</p>;
+
   return (
-    <div className="max-w-lg mx-auto p-6 bg-white shadow-md rounded-lg">
-      <h1 className="text-2xl font-semibold text-primary mb-6">User Profile & Preferences</h1>
+    <div className="max-w-lg mx-auto card"> {/* Using .card class */}
+      <h1>User Profile & Preferences</h1>
       <div className="mb-4">
         <p><span className="font-semibold">Email:</span> {user.email}</p>
         <p><span className="font-semibold">Name:</span> {user.name || 'N/A'}</p>
       </div>
 
-      {authError && !message && <p className="text-sm text-red-600 bg-red-100 p-2 rounded mb-4">Context Error: {authError}</p>}
-      {message && <p className={`text-sm p-2 rounded mb-4 ${message.startsWith('Error:') ? 'text-red-600 bg-red-100' : 'text-green-600 bg-green-100'}`}>{message}</p>}
+      {authError && !message && <p className="info-error">{/* ... error ... */}</p>}
+      {message && <p className={message.startsWith('Error:') ? "info-error" : "info-success"}>{message}</p>}
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <h2 className="text-xl font-medium text-gray-700 mb-3">Your Preferences</h2>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <h2>Your Preferences</h2>
         <div>
-          <label htmlFor="readingLevel" className="block text-sm font-medium text-gray-700">Reading Level:</label>
-          <select name="readingLevel" id="readingLevel" value={prefs.readingLevel || 'basic'} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md">
-            <option value="basic">Basic</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="fontSize" className="block text-sm font-medium text-gray-700">Font Size:</label>
-          <select name="fontSize" id="fontSize" value={prefs.fontSize || 'medium'} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md">
-            <option value="small">Small</option>
-            <option value="medium">Medium</option>
-            <option value="large">Large</option>
-            <option value="xlarge">X-Large</option>
-          </select>
-        </div>
-        <div>
-          <label htmlFor="theme" className="block text-sm font-medium text-gray-700">Theme:</label>
-          <select name="theme" id="theme" value={prefs.theme || 'light'} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md">
+          <label htmlFor="theme" className="form-label-default">Theme:</label>
+          <select name="theme" id="theme" value={prefs.theme} onChange={handleChange} className="form-input-default">
             <option value="light">Light</option>
             <option value="dark">Dark</option>
             <option value="high-contrast">High Contrast</option>
           </select>
         </div>
         <div>
-          <label htmlFor="preferredContentMode" className="block text-sm font-medium text-gray-700">Preferred Content Mode:</label>
-          <select name="preferredContentMode" id="preferredContentMode" value={prefs.preferredContentMode || 'text'} onChange={handleChange} className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-primary focus:border-primary sm:text-sm rounded-md">
-            <option value="text">Text</option>
-            <option value="video">Video</option>
-            <option value="visual">Visual Map</option>
-            <option value="audio">Audio</option>
+          <label htmlFor="fontSize" className="form-label-default">Font Size:</label>
+          <select name="fontSize" id="fontSize" value={prefs.fontSize} onChange={handleChange} className="form-input-default">
+            <option value="small">Small</option> <option value="medium">Medium</option>
+            <option value="large">Large</option> <option value="xlarge">X-Large</option>
+          </select>
+        </div>
+         <div className="flex items-center">
+          <input type="checkbox" name="dyslexiaFontEnabled" id="dyslexiaFontEnabled" checked={prefs.dyslexiaFontEnabled} onChange={handleChange} className="form-checkbox-default mr-2" />
+          <label htmlFor="dyslexiaFontEnabled" className="form-label-default !mb-0"> {/* !mb-0 to override default label margin */}
+            Enable Dyslexia-Friendly Font
+          </label>
+        </div>
+        <div>
+          <label htmlFor="readingLevel" className="form-label-default">Reading Level:</label>
+          <select name="readingLevel" id="readingLevel" value={prefs.readingLevel} onChange={handleChange} className="form-input-default">
+            <option value="basic">Basic</option> <option value="intermediate">Intermediate</option> <option value="advanced">Advanced</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="preferredContentMode" className="form-label-default">Preferred Content Mode:</label>
+          <select name="preferredContentMode" id="preferredContentMode" value={prefs.preferredContentMode} onChange={handleChange} className="form-input-default">
+            <option value="text">Text</option> <option value="video">Video</option>
+            <option value="visual">Visual Map</option> <option value="audio">Audio</option>
           </select>
         </div>
         <div className="flex items-center">
-          <input type="checkbox" name="ttsEnabled" id="ttsEnabled" checked={prefs.ttsEnabled || false} onChange={handleChange} className="h-4 w-4 text-primary border-gray-300 rounded focus:ring-primary" />
-          <label htmlFor="ttsEnabled" className="ml-2 block text-sm text-gray-900">
+          <input type="checkbox" name="ttsEnabled" id="ttsEnabled" checked={prefs.ttsEnabled} onChange={handleChange} className="form-checkbox-default mr-2" />
+          <label htmlFor="ttsEnabled" className="form-label-default !mb-0">
             Enable Text-to-Speech
           </label>
         </div>
-        <button
-          type="submit"
-          disabled={isSaving || authLoading} // Disable if saving or context is busy with auth stuff
-          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-dark disabled:opacity-50"
-        >
+        <button type="submit" disabled={isSaving || authLoading} className="button-primary w-full">
           {isSaving ? 'Saving...' : 'Save Preferences'}
         </button>
       </form>
     </div>
   );
 };
-
 export default UserProfile;
+
+ 
+
+===== File: /src/components/admin/DynamicUrlInput.jsx =====
+// src/components/admin/DynamicUrlInput.jsx
+import React, { useState, useEffect } from 'react';
+
+const DynamicUrlInput = ({ initialUrls = [], onChange, label = "Image URLs", placeholder = "https://example.com/image.jpg" }) => {
+  const [urls, setUrls] = useState(initialUrls.length > 0 ? initialUrls : ['']);
+
+  useEffect(() => {
+    setUrls(initialUrls.length > 0 ? initialUrls : ['']);
+  }, [initialUrls]);
+
+  const handleUrlChange = (index, value) => {
+    const newUrls = [...urls];
+    newUrls[index] = value;
+    setUrls(newUrls);
+    onChange(newUrls.filter(url => url && url.trim() !== '')); // Notify parent with non-empty URLs
+  };
+
+  const addUrlField = () => {
+    setUrls([...urls, '']);
+  };
+
+  const removeUrlField = (index) => {
+    if (urls.length <= 1 && index === 0) { // If it's the last field, just clear it
+        handleUrlChange(index, '');
+        return;
+    }
+    const newUrls = urls.filter((_, i) => i !== index);
+    setUrls(newUrls);
+    onChange(newUrls.filter(url => url && url.trim() !== ''));
+  };
+
+  // Basic check if a string looks like an image URL
+  const isImageUrl = (url) => {
+    return typeof url === 'string' && url.match(/\.(jpeg|jpg|gif|png|webp|svg)$/) != null;
+  };
+
+  return (
+    <div className="form-field-default">
+      <label className="form-label-default">{label}</label>
+      <div className="space-y-3">
+        {urls.map((url, index) => (
+          <div key={index} className="flex items-start gap-2"> {/* items-start for preview alignment */}
+            <div className="flex-grow"> {/* Input field takes remaining space */}
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => handleUrlChange(index, e.target.value)}
+                  placeholder={`${placeholder} (#${index + 1})`}
+                  className="form-input-default"
+                />
+            </div>
+            {/* Image Preview */}
+            {url && isImageUrl(url.trim()) && (
+              <div className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 bg-[var(--color-border)] rounded overflow-hidden border border-[var(--color-border)]">
+                <img
+                  src={url.trim()}
+                  alt={`Preview ${index + 1}`}
+                  className="w-full h-full object-cover"
+                  onError={(e) => { 
+                    // Optionally hide or show a broken image icon for the preview
+                    e.target.style.display = 'none'; 
+                    if(e.target.parentElement) e.target.parentElement.innerHTML = '<span class="text-xs text-red-500 p-1">Invalid</span>';
+                  }}
+                />
+              </div>
+            )}
+            {/* Remove Button */}
+            <button
+              type="button"
+              onClick={() => removeUrlField(index)}
+              className="button-secondary text-sm !p-2 body-theme-high-contrast:text-hc-link body-theme-high-contrast:border-hc-link flex-shrink-0"
+              aria-label={`Remove URL ${index + 1}`}
+              title="Remove URL"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.58.197-2.326.372a.75.75 0 0 0-.569.934l1.06 3.18a.75.75 0 0 0 .934.569c.795-.265 1.59-.453 2.396-.558a.75.75 0 0 0 .622-.882l-.318-2.165A2.248 2.248 0 0 1 8.75 2.5h2.5A2.248 2.248 0 0 1 13.498 4.58l-.318 2.165a.75.75 0 0 0 .622.882c.807.105 1.601.293 2.396.558a.75.75 0 0 0 .934-.569l1.06-3.18a.75.75 0 0 0-.569-.934c-.746-.175-1.53-.295-2.326-.372v-.443A2.75 2.75 0 0 0 11.25 1h-2.5ZM9.25 6.51V16h1.5V6.51l.011.002.021.002.022.002a24.32 24.32 0 0 1 2.99-.034c.795-.018 1.43.214 1.805.694.376.48.476 1.184.28 1.814l-.104.345a.75.75 0 0 1-1.341-.404l.104-.345c.098-.325.032-.65-.152-.922-.184-.271-.546-.425-1.046-.408a22.823 22.823 0 0 0-2.648.033l-.021-.002-.022-.002L9.25 6.51Z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={addUrlField}
+        className="button-secondary text-sm mt-3"
+      >
+        + Add Another URL
+      </button>
+    </div>
+  );
+};
+
+export default DynamicUrlInput;
+
+===== File: /src/components/admin/TagInput.jsx =====
+// src/components/admin/TagInput.jsx
+import React, { useState, useEffect } from 'react';
+
+const TagInput = ({ initialTags = [], onChange, label = "Tags", placeholder = "Add a tag and press Enter" }) => {
+  const [tags, setTags] = useState(initialTags);
+  const [inputValue, setInputValue] = useState('');
+
+  useEffect(() => {
+    // Sync with initialTags if it changes externally (e.g., loading data in Edit page)
+    setTags(initialTags);
+  }, [initialTags]);
+
+
+  const handleInputChange = (e) => {
+    setInputValue(e.target.value);
+  };
+
+  const handleInputKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const newTag = inputValue.trim();
+      if (newTag && !tags.includes(newTag)) {
+        const newTagsArray = [...tags, newTag];
+        setTags(newTagsArray);
+        onChange(newTagsArray); // Notify parent
+      }
+      setInputValue('');
+    } else if (e.key === 'Backspace' && !inputValue && tags.length > 0) {
+      e.preventDefault();
+      const newTagsArray = tags.slice(0, -1);
+      setTags(newTagsArray);
+      onChange(newTagsArray); // Notify parent
+    }
+  };
+
+  const removeTag = (tagToRemove) => {
+    const newTagsArray = tags.filter(tag => tag !== tagToRemove);
+    setTags(newTagsArray);
+    onChange(newTagsArray); // Notify parent
+  };
+
+  return (
+    <div className="form-field-default">
+      <label className="form-label-default">{label}</label>
+      <div className="form-input-default flex flex-wrap items-center gap-2 p-2 min-h-[42px]"> {/* Apply input styling to the wrapper */}
+        {tags.map((tag, index) => (
+          <div
+            key={index}
+            className="flex items-center bg-primary/20 dark:bg-primary-light/30 text-primary dark:text-primary-light text-sm font-medium px-2 py-1 rounded-full"
+          >
+            {tag}
+            <button
+              type="button"
+              onClick={() => removeTag(tag)}
+              className="ml-2 text-primary hover:text-primary-dark dark:text-primary-light dark:hover:text-white focus:outline-none"
+              aria-label={`Remove ${tag}`}
+            >
+              × {/* x icon */}
+            </button>
+          </div>
+        ))}
+        <input
+          type="text"
+          value={inputValue}
+          onChange={handleInputChange}
+          onKeyDown={handleInputKeyDown}
+          placeholder={tags.length === 0 ? placeholder : "Add another tag..."}
+          className="flex-grow bg-transparent border-none focus:ring-0 p-0 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-secondary)]"
+        />
+      </div>
+       <p className="text-xs text-[var(--color-text-secondary)] mt-1">Press Enter or comma to add a tag. Backspace to remove last tag if input is empty.</p>
+    </div>
+  );
+};
+
+export default TagInput;
 
 ===== File: /src/components/common/AdminRoute.jsx =====
 // src/components/common/AdminRoute.jsx
@@ -227,111 +425,280 @@ const AdminRoute = ({ children }) => {
 export default AdminRoute;
 
 ===== File: /src/components/common/MermaidDiagram.jsx =====
-// src/components/MermaidDiagram.jsx
-import React, { useEffect, useRef } from 'react';
-import mermaid from 'mermaid';
+// src/components/common/MermaidDiagram.jsx
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import mermaid from 'mermaid'; // Assuming stable v10.9.1 or similar
 
-// Initialize Mermaid (only once)
-mermaid.initialize({
-  startOnLoad: false, // We'll render manually
-  theme: 'default', // or 'dark', 'forest', etc.
-  // securityLevel: 'loose', // If you have issues with complex diagrams, but be cautious
-  // loglevel: 'debug', // For debugging
-});
+let globalMermaidInitializedForMain = false;
 
 const MermaidDiagram = ({ chartData, diagramId }) => {
-  const mermaidRef = useRef(null);
-  const uniqueId = diagramId || `mermaid-diagram-${Math.random().toString(36).substr(2, 9)}`;
+    const outputContainerRef = useRef(null);
+    const [currentDiagramText, setCurrentDiagramText] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
 
-  useEffect(() => {
-    if (mermaidRef.current && chartData) {
-      try {
-        // mermaid.render needs an ID for the SVG output
-        mermaid.render(uniqueId, chartData, (svgCode) => {
-          if (mermaidRef.current) {
-            mermaidRef.current.innerHTML = svgCode;
-          }
-        });
-      } catch (error) {
-        console.error("Mermaid rendering error:", error);
-        if (mermaidRef.current) {
-          mermaidRef.current.innerHTML = `<pre>Error rendering Mermaid diagram:\n${chartData}\n${error.message}</pre>`;
+    const [renderIdPrefix] = useState(
+        () => diagramId || `mermaid-output-${Math.random().toString(36).substring(2, 9)}`
+    );
+
+    useEffect(() => {
+        if (typeof window !== 'undefined' && !globalMermaidInitializedForMain) {
+            console.log("[MermaidDiagramMain] Initializing Mermaid...");
+            try {
+                mermaid.initialize({
+                    startOnLoad: true,
+                    theme: 'default', // Let's try 'default' or 'neutral' explicitly
+                    // securityLevel: 'loose', // Use with caution
+                    // logLevel: 'debug' // For more verbose mermaid logs
+                });
+                globalMermaidInitializedForMain = true;
+                console.log("[MermaidDiagramMain] Mermaid initialized.");
+            } catch (e) {
+                console.error("[MermaidDiagramMain] Error initializing Mermaid:", e);
+                setErrorMessage(`Mermaid init failed: ${e.message}`);
+            }
         }
-      }
-    } else if (mermaidRef.current) {
-        mermaidRef.current.innerHTML = ''; // Clear if no chartData
-    }
-  }, [chartData, uniqueId]);
+    }, []);
 
-  // If chartData is simple text (e.g. text_outline), render as preformatted text
-  if (typeof chartData === 'string' && !chartData.trim().startsWith('graph') && !chartData.trim().startsWith('mindmap')) {
-    return <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{chartData}</pre>;
-  }
+    useEffect(() => {
+        setCurrentDiagramText(chartData || '');
+        setErrorMessage('');
+    }, [chartData]);
 
-  // If chartData is intended for Mermaid
-  return <div ref={mermaidRef} className="mermaid-container"></div>;
+    useEffect(() => {
+        let isMounted = true;
+
+        const renderMermaidDiagramAsync = async () => {
+            if (!globalMermaidInitializedForMain) {
+                if (isMounted) setErrorMessage('Mermaid not initialized.');
+                return;
+            }
+            if (!outputContainerRef.current) {
+                console.warn("[MermaidDiagramMain] outputContainerRef.current is null during render attempt.");
+                return;
+            }
+            
+            // Ensure container is clear for new render or if no data
+            outputContainerRef.current.innerHTML = '';
+
+            if (!currentDiagramText || typeof currentDiagramText !== 'string' || !currentDiagramText.trim()) {
+                if (isMounted) setIsLoading(false);
+                if (outputContainerRef.current) outputContainerRef.current.innerHTML = '<p class="text-[var(--color-text-secondary)] text-xs italic">No diagram data.</p>';
+                return;
+            }
+
+            const isKnownDiagramType = ['graph', 'mindmap', 'flowchart', /* ... other types ... */]
+                .some(keyword => currentDiagramText.trim().toLowerCase().startsWith(keyword));
+
+            if (!isKnownDiagramType) {
+                if (isMounted) {
+                    // ... (render as preformatted text - same as before) ...
+                    const pre = document.createElement('pre'); /* ... */ pre.textContent = currentDiagramText;
+                    if (outputContainerRef.current) outputContainerRef.current.appendChild(pre);
+                    setIsLoading(false); setErrorMessage('');
+                }
+                return;
+            }
+
+            if (isMounted) {
+                setIsLoading(true);
+                setErrorMessage('');
+                if (outputContainerRef.current) outputContainerRef.current.innerHTML = '<p class="text-[var(--color-text-secondary)] animate-pulse">Generating diagram...</p>';
+            }
+
+            const uniqueRenderId = `${renderIdPrefix}-${Date.now()}`;
+            console.log(`[MermaidDiagramMain] Attempting to render Mermaid ID: ${uniqueRenderId}`);
+            console.log("[MermaidDiagramMain] Chart Data for this render:", JSON.stringify(currentDiagramText)); // Log the exact data being rendered
+
+            try {
+                const { svg, bindFunctions } = await mermaid.render(uniqueRenderId, currentDiagramText);
+                console.log("[MermaidDiagramMain] SVG generated by Mermaid:", svg.substring(0, 200) + "..."); // Log part of the SVG
+
+                if (isMounted && outputContainerRef.current) {
+                    outputContainerRef.current.innerHTML = svg;
+                    if (typeof bindFunctions === 'function') {
+                        bindFunctions(outputContainerRef.current);
+                    }
+                    console.log("[MermaidDiagramMain] Diagram rendered and injected successfully.");
+                    // **DEBUG: Force SVG visibility**
+                    const svgElement = outputContainerRef.current.querySelector('svg');
+                    if (svgElement) {
+                        console.log("[MermaidDiagramMain] Found SVG Element. Setting debug styles.");
+                        svgElement.style.width = '100%'; // Force width
+                        svgElement.style.height = 'auto';  // Maintain aspect ratio
+                        svgElement.style.minHeight = '300px'; // Ensure it has some height
+                        svgElement.style.border = '2px solid limegreen'; // Make it obvious
+                        svgElement.style.display = 'block'; // Ensure display is appropriate
+                        // Check its children's fill/stroke
+                        svgElement.querySelectorAll('*').forEach(el => {
+                            if (el.getAttribute('fill') === 'none' || el.getAttribute('fill') === '#fff' || el.getAttribute('fill') === 'white') {
+                                // el.setAttribute('fill', 'purple'); // TEMP DEBUG
+                            }
+                            if (!el.getAttribute('stroke') || el.getAttribute('stroke') === 'none' || el.getAttribute('stroke') === '#fff' || el.getAttribute('stroke') === 'white') {
+                                // el.setAttribute('stroke', 'orange'); // TEMP DEBUG
+                            }
+                        });
+                    } else {
+                        console.warn("[MermaidDiagramMain] No SVG element found after innerHTML injection.");
+                    }
+
+                } else if (isMounted) {
+                    console.warn("[MermaidDiagramMain] outputContainerRef became null after mermaid.render resolved, but component still mounted.");
+                    setErrorMessage("Output container disappeared during render.");
+                }
+            } catch (error) {
+                console.error("[MermaidDiagramMain] Render error:", error);
+                if (isMounted) {
+                    setErrorMessage(`Render error: ${error.message}. Check console.`);
+                    if (outputContainerRef.current) {
+                        outputContainerRef.current.innerHTML = `<pre style="color:red; white-space:pre-wrap; padding:10px; border:1px solid red;">Error: ${error.message}\n\nInput:\n${currentDiagramText.substring(0, 500)}...</pre>`;
+                    }
+                }
+            } finally {
+                if (isMounted) {
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        renderMermaidDiagramAsync();
+
+        return () => {
+            isMounted = false;
+            console.log("[MermaidDiagramMain] Cleanup effect for diagram text run.");
+        };
+    }, [currentDiagramText, renderIdPrefix]);
+
+    return (
+        <div 
+            className="mermaid-diagram-container flex flex-col justify-center items-center w-full min-h-[300px] border border-dashed p-2"
+            style={{ borderColor: 'var(--color-border)', backgroundColor: 'var(--color-card-background)' }} // Explicitly use CSS vars
+        >
+            {isLoading && <p className="text-[var(--color-text-secondary)] animate-pulse">Generating diagram...</p>}
+            {errorMessage && !isLoading && (
+                <div className="p-2 text-red-700 dark:text-red-300 body-theme-high-contrast:text-hc-link">
+                    <p className="font-semibold">Diagram Error:</p>
+                    <pre className="text-xs whitespace-pre-wrap break-words">{errorMessage}</pre>
+                </div>
+            )}
+            {/* This div is where the SVG is injected */}
+            <div 
+                ref={outputContainerRef} 
+                className="w-full h-full flex justify-center items-center"
+                style={{ minHeight: '250px' }} // Ensure inner div also has min height
+            >
+                {/* Placeholder content if needed, managed by effect */}
+            </div>
+        </div>
+    );
 };
 
 export default MermaidDiagram;
 
-// Example Usage in a component:
-// import MermaidDiagram from './MermaidDiagram';
-//
-// const MyContentPage = ({ visualMap }) => { // visualMap = { format: 'mermaid', data: 'graph TD; A-->B;' }
-//   return (
-//     <div>
-//       <h2>Visual Map</h2>
-//       {visualMap && visualMap.data ? (
-//         <MermaidDiagram chartData={visualMap.data} diagramId={`topic-${visualMap.topicId}-map`} />
-//       ) : (
-//         <p>No visual map available.</p>
-//       )}
-//     </div>
-//   );
-// };
-
 ===== File: /src/components/common/Navbar.jsx =====
 // src/components/common/Navbar.jsx
-import React from 'react';
+import React from 'react'; // Removed useState, useEffect, useRef if using HeadlessUI fully
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { Menu, Transition } from '@headlessui/react';
+import { Fragment } from 'react';
+
+const UserIcon = () => ( /* ... same as before ... */
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+      <path fillRule="evenodd" d="M18.685 19.097A9.723 9.723 0 0 0 21.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 0 0 3.065 7.097A9.716 9.716 0 0 0 12 21.75a9.716 9.716 0 0 0 6.685-2.653Zm-12.54-1.285A7.486 7.486 0 0 1 12 15a7.486 7.486 0 0 1 5.855 2.812A8.224 8.224 0 0 1 12 20.25a8.224 8.224 0 0 1-5.855-2.438ZM15.75 9a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" clipRule="evenodd" />
+    </svg>
+);
 
 const Navbar = () => {
     const { isAuthenticated, user, logout } = useAuth();
-    console.log("user::", user)
     const navigate = useNavigate();
 
     const handleLogout = () => {
         logout();
-        navigate('/login'); // Redirect to login after logout
+        navigate('/login');
     };
 
+    // Button styles for navbar items (example)
+    const navLinkClass = "text-white hover:text-opacity-80 transition-opacity duration-150";
+    const navButtonClass = "bg-white text-[var(--color-link)] hover:bg-opacity-90 dark:text-primary dark:hover:bg-slate-200 font-semibold py-1 px-3 rounded text-sm";
+    // High-contrast specific for signup button if needed, or rely on global button theming
+    const hcNavLinkClass = "body.theme-high-contrast & { text-[var(--color-hc-text)] }"; // This is pseudo-css
+    const hcNavButtonClass = "body.theme-high-contrast & { background-color: var(--color-hc-link); color: var(--color-hc-background); }";
+
+
     return (
-        <nav className="bg-primary shadow-md">
+        <nav className="bg-primary text-white dark:bg-slate-900 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:text-hc-text body-theme-high-contrast:border-b body-theme-high-contrast:border-hc-border shadow-md">
+             {/* The body-theme-high-contrast:... classes are illustrative; actual application happens via body class + CSS vars */}
             <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-                <Link to="/" className="text-xl font-bold text-white hover:text-primary-light transition duration-200">
+                <Link to="/" className={`text-xl font-bold ${navLinkClass}`}>
                     Accessible Learning
                 </Link>
-                <div className="space-x-4 flex items-center">
-                {isAuthenticated && user?.role === 'admin' && (
-  <Link to="/admin" className="text-white hover:text-primary-light">Admin</Link>
-)}
+                <div className="space-x-2 sm:space-x-4 flex items-center">
+                    {isAuthenticated && user?.role === 'admin' && (
+                        <Link to="/admin" className={navLinkClass}>Admin</Link>
+                    )}
                     {isAuthenticated ? (
                         <>
-                            <Link to="/dashboard" className="text-white hover:text-primary-light">Dashboard</Link>
-                            {/* Add more links as needed */}
-                            <span className="text-primary-light">Welcome, {user?.name || user?.email}!</span>
-                            <button
-                                onClick={handleLogout}
-                                className="bg-secondary hover:bg-pink-500 text-white font-semibold py-1 px-3 rounded transition duration-200"
-                            >
-                                Logout
-                            </button>
+                            <Link to="/dashboard" className={navLinkClass}>Dashboard</Link>
+                            <Menu as="div" className="relative inline-block text-left">
+                                <div>
+                                    <Menu.Button className={`inline-flex w-full justify-center items-center space-x-1 rounded-md px-1 py-1 sm:px-2 text-sm font-medium ${navLinkClass} focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-75`}>
+                                        <UserIcon />
+                                        <span className="hidden md:inline">{user?.name || user?.email?.split('@')[0]}</span>
+                                        <svg className="-mr-1 ml-1 h-5 w-5 hidden sm:inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+                                    </Menu.Button>
+                                </div>
+                                <Transition
+                                    as={Fragment}
+                                    enter="transition ease-out duration-100"
+                                    enterFrom="transform opacity-0 scale-95"
+                                    enterTo="transform opacity-100 scale-100"
+                                    leave="transition ease-in duration-75"
+                                    leaveFrom="transform opacity-100 scale-100"
+                                    leaveTo="transform opacity-0 scale-95"
+                                >
+                                    <Menu.Items className="absolute right-0 mt-2 w-56 origin-top-right rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-50
+                                                        bg-[var(--color-card-background)] border border-[var(--color-border)] divide-y divide-[var(--color-border)]">
+                                        <div className="px-1 py-1 ">
+                                             <div className="px-3 py-2">
+                                                <p className="text-xs text-[var(--color-text-secondary)]">Signed in as</p>
+                                                <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{user?.email}</p>
+                                            </div>
+                                        </div>
+                                        <div className="px-1 py-1">
+                                            <Menu.Item>
+                                                {({ active }) => (
+                                                    <Link
+                                                        to="/profile"
+                                                        className={`group flex w-full items-center rounded-md px-2 py-2 text-sm 
+                                                                    ${active ? 'bg-[var(--color-link)] text-white dark:text-[var(--color-button-primary-text)] body-theme-high-contrast:text-[var(--color-hc-background)]' : 'text-[var(--color-text-primary)]'}`}
+                                                    >
+                                                        Update Profile
+                                                    </Link>
+                                                )}
+                                            </Menu.Item>
+                                        </div>
+                                        <div className="px-1 py-1">
+                                            <Menu.Item>
+                                                {({ active }) => (
+                                                    <button
+                                                        onClick={handleLogout}
+                                                        className={`group flex w-full items-center rounded-md px-2 py-2 text-sm
+                                                                    ${active ? 'bg-[var(--color-link)] text-white dark:text-[var(--color-button-primary-text)] body-theme-high-contrast:text-[var(--color-hc-background)]' : 'text-[var(--color-text-primary)]'}`}
+                                                    >
+                                                        Logout
+                                                    </button>
+                                                )}
+                                            </Menu.Item>
+                                        </div>
+                                    </Menu.Items>
+                                </Transition>
+                            </Menu>
                         </>
                     ) : (
                         <>
-                            <Link to="/login" className="text-white hover:text-primary-light">Login</Link>
-                            <Link to="/signup" className="bg-white text-primary font-semibold py-1 px-3 rounded hover:bg-gray-100 transition duration-200">
+                            <Link to="/login" className={navLinkClass}>Login</Link>
+                            <Link to="/signup" className={navButtonClass}>
                                 Sign Up
                             </Link>
                         </>
@@ -371,6 +738,96 @@ const ProtectedRoute = ({ children }) => {
 };
 
 export default ProtectedRoute;
+
+===== File: /src/components/common/SimpleMermaidTest copy.jsx =====
+import React, { useEffect, useRef, useState } from 'react';
+import mermaid from 'mermaid';
+
+const MermaidDiagram = () => {
+    const [input, setInput] = useState('graph TD; A-->B');
+    const outputRef = useRef(null);
+
+    useEffect(() => {
+        // Initialize Mermaid
+        mermaid.initialize({ startOnLoad: true });
+
+        // Optional: Ensure Mermaid is loaded, you might want to dynamically load the library
+        // and only execute this effect once the library is confirmed to be loaded.
+    }, []);
+
+    async function renderDiagram() {
+        if (outputRef.current && input) {
+            try {
+                const { svg } = await mermaid.render("theGraph", input);
+                outputRef.current.innerHTML = svg;
+            } catch (error) {
+                outputRef.current.innerHTML = "Invalid syntax";
+            }
+        }
+    }
+
+    useEffect(() => {
+        renderDiagram();
+    }, [input]);
+
+    return (
+        <div>
+            <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                style={{ width: '100%', minHeight: '100px' }}
+            />
+            <div ref={outputRef} />
+        </div>
+    );
+};
+
+export default MermaidDiagram;
+
+===== File: /src/components/common/SimpleMermaidTest.jsx =====
+import React, { useEffect, useRef, useState } from 'react';
+import mermaid from 'mermaid';
+
+const MermaidDiagram = () => {
+    const [input, setInput] = useState('graph TD; A-->B');
+    const outputRef = useRef(null);
+
+    useEffect(() => {
+        // Initialize Mermaid
+        mermaid.initialize({ startOnLoad: true });
+
+        // Optional: Ensure Mermaid is loaded, you might want to dynamically load the library
+        // and only execute this effect once the library is confirmed to be loaded.
+    }, []);
+
+    async function renderDiagram() {
+        if (outputRef.current && input) {
+            try {
+                const { svg } = await mermaid.render("theGraph", input);
+                outputRef.current.innerHTML = svg;
+            } catch (error) {
+                outputRef.current.innerHTML = "Invalid syntax";
+            }
+        }
+    }
+
+    useEffect(() => {
+        renderDiagram();
+    }, [input]);
+
+    return (
+        <div>
+            <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                style={{ width: '100%', minHeight: '100px' }}
+            />
+            <div ref={outputRef} />
+        </div>
+    );
+};
+
+export default MermaidDiagram;
 
 ===== File: /src/contexts/AuthContext.jsx =====
 // src/contexts/AuthContext.jsx (Unified)
@@ -562,244 +1019,308 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   getContentByTopic,
   simplifyContent,
-  generateVisualMap, // Assuming this will be implemented in contentService
-  generateAudioNarration // Assuming this will be implemented in contentService
+  generateVisualMap,
+  generateAudioNarration
 } from '../services/contentService';
-import MermaidDiagram from '../components/common/MermaidDiagram'; // Adjust path if needed
+import MermaidDiagram from '../components/common/MermaidDiagram';
 
-// Placeholder components - create these properly
-const LoadingSpinner = ({ text = "Loading..." }) => <div className="text-center p-10"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-2"></div><p>{text}</p></div>;
-const ErrorMessage = ({ message }) => <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 my-4 rounded" role="alert"><p className="font-bold">Error</p><p>{message}</p></div>;
-const InfoMessage = ({ message }) => <div className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 my-4 rounded" role="alert"><p>{message}</p></div>;
+// --- Inlined Placeholder Components (Ideally, these are separate files) ---
+const LoadingSpinner = ({ text = "Loading..." }) => (
+  <div className="text-center p-10">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-link)] mx-auto mb-2"></div>
+    <p className="text-[var(--color-text-secondary)]">{text}</p>
+  </div>
+);
+
+const ErrorMessage = ({ message }) => (
+  <div
+    className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 my-4 rounded
+               dark:bg-red-900/30 dark:border-red-600 dark:text-red-300
+               body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link"
+    role="alert"
+  >
+    <p className="font-bold">Error</p>
+    <p>{message}</p>
+  </div>
+);
+
+const InfoMessage = ({ message }) => (
+  <div
+    className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 my-4 rounded
+               dark:bg-blue-900/30 dark:border-blue-600 dark:text-blue-300
+               body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link"
+    role="alert"
+  >
+    <p>{message}</p>
+  </div>
+);
+// --- End Placeholder Components ---
 
 
 const ContentPage = () => {
   const { topic } = useParams();
-  const { user } = useAuth(); // Get user for preferences
+  const { user } = useAuth();
+  const userPrefs = user?.preferences;
 
   const [content, setContent] = useState(null);
-  const [currentMode, setCurrentMode] = useState('original'); // 'original', 'simplified', 'visual', 'audio'
-  const [displayedText, setDisplayedText] = useState(''); // For original or simplified text
-
-  // Mode-specific states
-  const [visualMapData, setVisualMapData] = useState(null); // { format: 'mermaid', data: '...' }
+  const [currentMode, setCurrentMode] = useState('original');
+  const [displayedText, setDisplayedText] = useState('');
+  const [visualMapData, setVisualMapData] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
-
-  // Loading/Error states
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isProcessingMode, setIsProcessingMode] = useState(false); // For AI generation actions
+  const [isProcessingMode, setIsProcessingMode] = useState(false);
+
+  // For on-page image toggle (optional, advanced UX)
+  // const [showImagesOverride, setShowImagesOverride] = useState(null); 
 
   const fetchContentData = useCallback(async () => {
     if (!topic) return;
     setLoading(true);
-    setError(null);
-    setContent(null); // Reset content on new topic load
-    setDisplayedText('');
-    setVisualMapData(null);
-    setAudioUrl(null);
-    setCurrentMode('original'); // Default to original
-
+    setError(null); setContent(null); setDisplayedText(''); setVisualMapData(null); setAudioUrl(null); setCurrentMode('original');
     try {
       const data = await getContentByTopic(topic);
       setContent(data);
-      setDisplayedText(data.originalText); // Display original text by default
+      console.log("Fetched Content Data:", data);
+      setDisplayedText(data.originalText);
 
-      // Auto-select preferred mode if content is available and user has preference
-      if (user?.preferences?.preferredContentMode) {
-        const prefMode = user.preferences.preferredContentMode;
-        if (prefMode === 'simplified' && data.simplifiedVersions?.some(v => v.level === (user.preferences.readingLevel === 'basic' ? 'easy' : 'moderate'))) {
-           const levelToLoad = user.preferences.readingLevel === 'basic' ? 'easy' : 'moderate';
-           const version = data.simplifiedVersions.find(v => v.level === levelToLoad);
-           if(version) {
-               setDisplayedText(version.text);
-               setCurrentMode('simplified');
-           }
+      if (userPrefs?.preferredContentMode) {
+        const prefMode = userPrefs.preferredContentMode;
+        const readingLevelCacheKey = userPrefs.readingLevel === 'basic' ? 'easy' : (userPrefs.readingLevel === 'advanced' ? 'advanced' : 'moderate');
+        
+        if (prefMode === 'simplified' && data.simplifiedVersions?.length > 0) {
+           const version = data.simplifiedVersions.find(v => v.level === readingLevelCacheKey) || data.simplifiedVersions[0];
+           if(version) { setDisplayedText(version.text); setCurrentMode('simplified'); }
+        } else if (prefMode === 'visual' && data.visualMaps?.length > 0) {
+            setVisualMapData(data.visualMaps[0]); setCurrentMode('visual');
+        } else if (prefMode === 'audio' && data.audioNarrations?.length > 0) {
+            setAudioUrl(data.audioNarrations[0].url); setCurrentMode('audio');
         }
-        // Add similar logic for visual, audio if pre-generated content exists
       }
-
-    } catch (err) {
-      console.error("Failed to fetch content:", err);
-      setError(err.response?.data?.message || `Content for "${topic}" not found or failed to load.`);
-    } finally {
-      setLoading(false);
+    } catch (err) { 
+        setError(err.response?.data?.message || `Content for "${topic}" not found or failed to load.`);
+        console.error("Fetch content error:", err);
     }
-  }, [topic, user?.preferences?.preferredContentMode, user?.preferences?.readingLevel]); // Add user preferences as dependencies
+    finally { setLoading(false); }
+  }, [topic, userPrefs]);
 
-  useEffect(() => {
-    fetchContentData();
-  }, [fetchContentData]);
+  useEffect(() => { fetchContentData(); }, [fetchContentData]);
 
-
-  const handleModeChange = async (mode, params = {}) => {
-    setError(null); // Clear previous mode-specific errors
-    if (mode === currentMode && mode !== 'simplified') return; // Avoid re-processing if already in mode (except for re-simplifying)
+  const handleModeChange = useCallback(async (mode, params = {}) => {
+    setError(null);
+    if (mode === currentMode && mode !== 'simplified') return;
 
     setCurrentMode(mode);
     setIsProcessingMode(true);
-
+    setVisualMapData(null); 
+    setAudioUrl(null);     
+    
     try {
+      if (!content) { setError("Content not loaded yet."); setIsProcessingMode(false); return; }
+
       if (mode === 'original') {
         setDisplayedText(content.originalText);
       } else if (mode === 'simplified') {
-        const level = params.level || (user?.preferences?.readingLevel === 'basic' ? 'easy' : 'moderate') || 'easy';
+        const level = params.level || (userPrefs?.readingLevel === 'basic' ? 'easy' : (userPrefs?.readingLevel === 'advanced' ? 'advanced' : 'moderate'));
         const cachedVersion = content.simplifiedVersions?.find(v => v.level === level);
-        if (cachedVersion && params.level) { // Only use cache if specific level requested and found
+        if (cachedVersion) {
           setDisplayedText(cachedVersion.text);
         } else {
           const simplifiedData = await simplifyContent(content.topic, level);
           setDisplayedText(simplifiedData.simplifiedText);
-          // Optimistically update local content state with the new version
-          if (content) {
-            const existingVersionIndex = content.simplifiedVersions?.findIndex(v => v.level === level);
-            let newSimplifiedVersions = [...(content.simplifiedVersions || [])];
-            if (existingVersionIndex > -1) {
-              newSimplifiedVersions[existingVersionIndex] = { level, text: simplifiedData.simplifiedText, createdAt: new Date() };
-            } else {
-              newSimplifiedVersions.push({ level, text: simplifiedData.simplifiedText, createdAt: new Date() });
-            }
-            setContent(prev => ({ ...prev, simplifiedVersions: newSimplifiedVersions }));
-          }
+          setContent(prev => ({...prev, simplifiedVersions: [...(prev.simplifiedVersions || []), {level, text: simplifiedData.simplifiedText, createdAt: new Date()}]}));
         }
       } else if (mode === 'visual') {
-        const format = 'mermaid'; // Or make this configurable
+        setDisplayedText(''); 
+        const format = 'mermaid'; 
         const cachedMap = content.visualMaps?.find(v => v.format === format);
         if (cachedMap) {
             setVisualMapData(cachedMap);
         } else {
             const mapData = await generateVisualMap(content.topic, format);
-            setVisualMapData(mapData.visualMap); // Assuming service returns { visualMap: { format, data, ... } }
-             if (content) {
-                setContent(prev => ({
-                    ...prev,
-                    visualMaps: [...(prev.visualMaps || []), mapData.visualMap]
-                }));
-            }
+            setVisualMapData(mapData.visualMap);
+            setContent(prev => ({...prev, visualMaps: [...(prev.visualMaps || []), mapData.visualMap]}));
         }
       } else if (mode === 'audio') {
-        // For MVP, assume audio is generated for the currently displayed text
-        // In a real app, you might choose original or a specific simplified version
-        if (content.audioNarrations && content.audioNarrations.length > 0) {
-            setAudioUrl(content.audioNarrations[0].url); // Use first available cached audio
-        } else if (displayedText) {
-            const narrationData = await generateAudioNarration(content._id, displayedText);
-            setAudioUrl(narrationData.narration.url); // Assuming service returns { narration: { url, ... } }
-             if (content) {
-                setContent(prev => ({
-                    ...prev,
-                    audioNarrations: [...(prev.audioNarrations || []), narrationData.narration]
-                }));
-            }
-        } else {
+        setDisplayedText(''); 
+        const readingLevelCacheKey = userPrefs?.readingLevel === 'basic' ? 'easy' : (userPrefs?.readingLevel === 'advanced' ? 'advanced' : 'moderate');
+        const textForAudio = content.simplifiedVersions?.find(v => v.level === readingLevelCacheKey)?.text || content.originalText;
+        const cachedAudio = content.audioNarrations?.[0]; 
+        if(cachedAudio) { 
+            setAudioUrl(cachedAudio.url); 
+        } else if (textForAudio) {
+            const narrationData = await generateAudioNarration(content._id, textForAudio);
+            setAudioUrl(narrationData.narration.url);
+            setContent(prev => ({...prev, audioNarrations: [...(prev.audioNarrations || []), narrationData.narration]}));
+        } else { 
             setError("No text available to narrate.");
         }
       }
     } catch (err) {
       console.error(`Failed to switch to ${mode} mode:`, err);
       setError(err.response?.data?.error || `Failed to generate ${mode} content.`);
-      // Revert to original text on error if mode processing failed
-      // setCurrentMode('original');
-      // setDisplayedText(content?.originalText || '');
     } finally {
       setIsProcessingMode(false);
     }
+  }, [content, currentMode, userPrefs]);
+
+  const getProseClass = () => userPrefs?.theme === 'high-contrast' ? 'prose-high-contrast' : '';
+
+  const getButtonClass = (modeNameIsCurrent) => {
+    let base = "px-3 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ";
+    if (modeNameIsCurrent) {
+        if (userPrefs?.theme === 'high-contrast') return base + "bg-hc-interactive text-hc-interactive-text";
+        return base + "bg-primary text-white dark:bg-primary-light dark:text-slate-900 shadow-md";
+    } else {
+        if (userPrefs?.theme === 'high-contrast') return base + "bg-hc-background text-hc-text border border-hc-border hover:bg-gray-800";
+        return base + "bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-slate-200";
+    }
   };
 
-  // Apply dynamic styles based on user preferences
-  const userPrefs = user?.preferences;
-  const contentStyles = {
-    fontSize: userPrefs?.fontSize === 'small' ? '0.875rem' :
-              userPrefs?.fontSize === 'large' ? '1.25rem' :
-              userPrefs?.fontSize === 'xlarge' ? '1.5rem' : '1rem', // medium/default
-    fontFamily: userPrefs?.theme === 'dyslexia' ? 'OpenDyslexic, sans-serif' : 'inherit', // Assuming a 'dyslexia' theme option for font
-  };
-  // Theme class for container (light, dark, high-contrast)
-  const themeClass = userPrefs?.theme === 'dark' ? 'theme-dark bg-gray-800 text-gray-100' :
-                     userPrefs?.theme === 'high-contrast' ? 'theme-high-contrast bg-black text-white' :
-                     'theme-light bg-gray-50';
+  const imageUrlsToDisplay = content?.media?.imageUrls || [];
+  
+  // --- Image Display Preferences ---
+  // For showImages: 'all', 'none' (or boolean 'showContentImages')
+  // For imageLayout: 'stacked', 'grid'
+  const showImagesPreference = userPrefs?.showContentImages !== undefined ? userPrefs.showContentImages : true; // Default to true if not set
+  // let showImages = showImagesOverride !== null ? showImagesOverride : showImagesPreference;
+  let showImages = showImagesPreference; // Simplified for now, without on-page override
 
+  const imageLayoutPreference = userPrefs?.imageLayout || 'stacked'; // Default to 'stacked'
 
-  if (loading) return <LoadingSpinner text={`Loading ${topic.replace('-', ' ')}...`} />;
+  if (loading) return <LoadingSpinner text={`Loading ${topic.replace(/-/g, ' ')}...`} />;
 
   return (
-    <div className={`container mx-auto p-4 md:p-6 min-h-screen ${themeClass}`}>
+    <div className="container mx-auto p-4 md:p-6">
       <div className="mb-4">
-        <Link to="/dashboard" className={`hover:underline text-sm ${userPrefs?.theme === 'dark' || userPrefs?.theme === 'high-contrast' ? 'text-blue-300 hover:text-blue-200' : 'text-primary hover:text-primary-dark'}`}>
-            ← Back to Dashboard
-        </Link>
+        <Link to="/dashboard" className="text-sm">← Back to Dashboard</Link>
       </div>
 
       {error && <ErrorMessage message={error} />}
-
       {!content && !loading && !error && <InfoMessage message={`No content found for "${topic}".`} />}
 
       {content && (
-        <div>
-          <h1 className="text-3xl md:text-4xl font-bold mb-6 capitalize">
-            {content.topic.replace(/-/g, ' ')}
-          </h1>
+        <div className="space-y-8"> {/* Main content wrapper for spacing */}
+          <h1 className="capitalize">{content.topic.replace(/-/g, ' ')}</h1>
+          
+          {/* Main Content Area (Text, Mermaid, Audio) */}
+          <div className="mb-8"> {/* Spacing after main content before images */}
+            <div className="mb-6 border-b pb-3 flex flex-wrap gap-2 items-center border-[var(--color-border)]">
+              {['original', 'simplified', 'visual', 'audio'].map((modeName) => (
+                <button
+                  key={modeName}
+                  onClick={() => handleModeChange(modeName)}
+                  disabled={isProcessingMode && currentMode !== modeName && modeName !== 'original'}
+                  className={getButtonClass(currentMode === modeName)}
+                >
+                  {isProcessingMode && currentMode === modeName ? `Loading...` : modeName.charAt(0).toUpperCase() + modeName.slice(1)}
+                </button>
+              ))}
+              {currentMode === 'simplified' && (
+                  <select
+                      value={userPrefs?.readingLevel === 'basic' ? 'easy' : (userPrefs?.readingLevel === 'advanced' ? 'advanced' : 'moderate')}
+                      onChange={(e) => handleModeChange('simplified', { level: e.target.value })}
+                      disabled={isProcessingMode}
+                      className="form-input-default ml-2 px-2 py-1.5 text-sm !w-auto"
+                  >
+                      <option value="easy">Easy</option>
+                      <option value="moderate">Moderate</option>
+                      <option value="advanced">Advanced</option>
+                  </select>
+              )}
+            </div>
 
-          {/* --- Content Mode Switching UI --- */}
-          <div className="mb-6 border-b pb-3 flex flex-wrap gap-2 items-center">
-            {['original', 'simplified', 'visual', 'audio'].map((modeName) => (
-              <button
-                key={modeName}
-                onClick={() => handleModeChange(modeName)}
-                disabled={isProcessingMode && currentMode !== modeName && modeName !== 'original'}
-                className={`px-3 py-1.5 rounded text-sm font-medium transition-colors
-                  ${currentMode === modeName
-                    ? 'bg-primary text-white shadow-md'
-                    : `${userPrefs?.theme === 'dark' || userPrefs?.theme === 'high-contrast' ? 'bg-gray-700 hover:bg-gray-600 text-gray-200' : 'bg-gray-200 hover:bg-gray-300 text-gray-700'} disabled:opacity-50 disabled:cursor-not-allowed`}
+            <article
+              className={`prose prose-sm sm:prose lg:prose-lg xl:prose-xl max-w-none 
+                          p-4 md:p-6 border rounded shadow-sm 
+                          bg-[var(--color-card-background)] border-[var(--color-border)]
+                          dark:prose-invert ${getProseClass()}`}
+            >
+              {(currentMode === 'original' || currentMode === 'simplified') && (
+                   isProcessingMode && !displayedText ? <LoadingSpinner text={currentMode === 'original' ? 'Loading...' : 'Simplifying...'} /> :
+                   displayedText ? <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n/g, '<br />') }} /> :
+                   !isProcessingMode && <InfoMessage message="No text content available." />
+              )}
+              {currentMode === 'visual' && (
+                   isProcessingMode && !visualMapData ? <LoadingSpinner text="Generating visual map..." /> :
+                   visualMapData && visualMapData.data && visualMapData.format === 'mermaid' ? (
+                       <MermaidDiagram chartData={visualMapData.data} diagramId={`content-map-${content._id}-${Date.now()}`} />
+                   ) :
+                   visualMapData && visualMapData.data && visualMapData.format !== 'mermaid' ? (
+                        <pre className="whitespace-pre-wrap break-words">{visualMapData.data}</pre>
+                   ) :
+                   !isProcessingMode && <InfoMessage message="No visual map available or format not supported." />
+              )}
+              {currentMode === 'audio' && (
+                   isProcessingMode && !audioUrl ? <LoadingSpinner text="Generating audio..." /> :
+                   audioUrl ? <audio controls src={audioUrl} className="w-full my-2 body-theme-high-contrast:[color-scheme:dark]">Your browser does not support audio.</audio> :
+                   !isProcessingMode && <InfoMessage message="No audio available." />
+              )}
+            </article>
+          </div>
+          {/* End Main Content Area */}
+
+
+          {/* --- IMAGE DISPLAY SECTION --- */}
+          {showImages && imageUrlsToDisplay && imageUrlsToDisplay.length > 0 && (
+            <section className="my-8 py-6 border-t border-b border-[var(--color-border)]" aria-labelledby="illustrations-heading">
+              <h2 id="illustrations-heading" className="text-xl font-semibold mb-6 text-center text-[var(--color-text-secondary)]">
+                Illustrations / Visual Aids
+              </h2>
+              
+              <div 
+                className={`
+                  ${imageLayoutPreference === 'grid' ? 
+                    'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6' : 
+                    'space-y-6 max-w-2xl mx-auto' // Stacked layout
+                  }
                 `}
               >
-                {isProcessingMode && currentMode === modeName ? `Loading ${modeName}...` : modeName.charAt(0).toUpperCase() + modeName.slice(1)}
-              </button>
-            ))}
-            {currentMode === 'simplified' && ( // Show level options for simplified mode
-                <select
-                    value={(user?.preferences?.readingLevel === 'basic' ? 'easy' : 'moderate') || 'easy'}
-                    onChange={(e) => handleModeChange('simplified', { level: e.target.value })}
-                    disabled={isProcessingMode}
-                    className={`ml-2 px-2 py-1.5 rounded text-sm border ${userPrefs?.theme === 'dark' || userPrefs?.theme === 'high-contrast' ? 'bg-gray-700 border-gray-600 text-gray-200' : 'bg-white border-gray-300'} focus:ring-primary focus:border-primary`}
-                >
-                    <option value="easy">Easy</option>
-                    <option value="moderate">Moderate</option>
-                </select>
-            )}
+                {imageUrlsToDisplay.map((url, index) => (
+                  url && typeof url === 'string' && url.trim() !== '' ? (
+                    <figure 
+                        key={`content-image-${index}-${url}`} 
+                        className="bg-[var(--color-card-background)] rounded-lg overflow-hidden shadow-lg border border-[var(--color-border)] group" // group for hover effect
+                    >
+                      <img
+                        src={url}
+                        alt={`${content.topic.replace(/-/g, ' ')} illustration ${index + 1}`}
+                        className={`w-full block mx-auto transition-transform duration-300 group-hover:scale-105
+                          ${imageLayoutPreference === 'grid' ? 
+                            'h-full object-cover aspect-[16/10]' : // For grid, cover and aspect ratio
+                            'h-auto max-h-[60vh] object-contain' // For stacked, contain and max height
+                          } 
+                        `}
+                        loading="lazy"
+                        onError={(e) => {
+                          console.warn(`Error loading image: ${url}`);
+                          e.target.style.display = 'none';
+                          if(e.target.parentElement) {
+                            const errorP = document.createElement('p');
+                            errorP.className = 'text-xs text-red-500 p-4 text-center';
+                            errorP.textContent = 'Image failed to load';
+                            e.target.parentElement.appendChild(errorP);
+                          }
+                        }}
+                      />
+                      {/* Example for caption if you add caption data to your content model */}
+                      {/* {content.media.imageCaptions && content.media.imageCaptions[index] && (
+                        <figcaption className="p-3 text-sm text-center text-[var(--color-text-secondary)] bg-[var(--color-background)] border-t border-[var(--color-border)]">
+                          {content.media.imageCaptions[index]}
+                        </figcaption>
+                      )} */}
+                    </figure>
+                  ) : null
+                ))}
+              </div>
+            </section>
+          )}
+          {/* --- END IMAGE DISPLAY SECTION --- */}
+
+          <div className="mt-8 card">
+            <h3 className="text-xl font-semibold mb-3">Interactive Companion</h3>
+            <p className="text-[var(--color-text-secondary)]">Ask questions and get personalized help related to this topic (Coming Soon).</p>
           </div>
-
-          {/* --- Content Display Area --- */}
-          <article
-            style={contentStyles}
-            className={`prose prose-sm sm:prose lg:prose-lg xl:prose-xl max-w-none p-4 md:p-6 border rounded shadow-sm
-            ${userPrefs?.theme === 'dark' ? 'bg-gray-750 border-gray-700 prose-invert' :
-            userPrefs?.theme === 'high-contrast' ? 'bg-gray-900 border-gray-600 prose-invert filter invert-[1] contrast-[2]' : // Example high contrast
-            'bg-white border-gray-200'}`}
-          >
-            {currentMode === 'original' && <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n/g, '<br />') }} />}
-            {currentMode === 'simplified' && <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n/g, '<br />') }} />}
-
-            {currentMode === 'visual' && (
-              isProcessingMode && !visualMapData ? <LoadingSpinner text="Generating visual map..." /> :
-              visualMapData ? <MermaidDiagram chartData={visualMapData.data} diagramId={`content-map-${content._id}`} /> :
-              !isProcessingMode && <InfoMessage message="No visual map generated or available." />
-            )}
-
-            {currentMode === 'audio' && (
-              isProcessingMode && !audioUrl ? <LoadingSpinner text="Generating audio..." /> :
-              audioUrl ? <audio controls src={audioUrl} className="w-full my-2">Your browser does not support the audio element.</audio> :
-              !isProcessingMode && <InfoMessage message="No audio generated or available." />
-            )}
-          </article>
-
-          {/* Interactive Companion (Chatbot) Placeholder */}
-          <div className="mt-8 p-4 border rounded shadow-sm bg-white">
-            <h3 className="text-xl font-semibold mb-3">Interactive Companion (Coming Soon)</h3>
-            <p className="text-gray-600">Ask questions and get personalized help related to this topic.</p>
-            {/* <ChatbotComponent topic={content.topic} /> */}
-          </div>
-
         </div>
       )}
     </div>
@@ -809,6 +1330,7 @@ const ContentPage = () => {
 export default ContentPage;
 
 ===== File: /src/pages/DashboardPage.jsx =====
+// src/pages/DashboardPage.jsx
 import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
@@ -817,28 +1339,60 @@ const DashboardPage = () => {
   const { user } = useAuth();
 
   // Example list of topics - you'd likely fetch this later
-  const topics = ['photosynthesis', 'gravity', 'react-basics', 'python-loops'];
+  const topics = ['photosynthesis', 'gravity', 'react-basics', 'python-loops', 'neurodiversity-awareness'];
 
   return (
-    <div>
-      <h1 className="text-3xl font-bold mb-4 text-primary">Dashboard</h1>
-      <p className="mb-6">Welcome back, {user?.name || user?.email}!</p>
+    <div className="space-y-8"> {/* Added space-y for better vertical rhythm */}
+      <div>
+        <h1>Dashboard</h1> {/* Uses global H1 style */}
+        <p className="text-lg text-[var(--color-text-secondary)]">
+          Welcome back, {user?.name || user?.email}!
+        </p>
+      </div>
 
-      <h2 className="text-2xl font-semibold mb-3">Available Topics:</h2>
-      <ul className="list-disc list-inside space-y-2">
-         {topics.map(topic => (
-             <li key={topic}>
-                 <Link
-                     to={`/content/${topic}`}
-                     className="text-blue-600 hover:text-blue-800 hover:underline capitalize" // Capitalize for display
-                 >
-                     {topic.replace('-', ' ')} {/* Replace hyphens for readability */}
-                 </Link>
-             </li>
-         ))}
-      </ul>
+      <div className="card"> {/* Using .card class */}
+        <h2 className="text-xl font-semibold mb-4">Available Topics:</h2>
+        {topics.length > 0 ? (
+          <ul className="space-y-3">
+            {topics.map(topic => (
+              <li key={topic}>
+                <Link
+                  to={`/content/${topic}`}
+                  className="block p-3 rounded-md hover:bg-primary/10 dark:hover:bg-primary-light/10 body-theme-high-contrast:hover:bg-hc-link body-theme-high-contrast:hover:text-hc-background transition-colors duration-150"
+                >
+                  <span className="font-medium text-base capitalize">
+                    {topic.replace(/-/g, ' ')}
+                  </span>
+                  <p className="text-sm text-[var(--color-text-secondary)] mt-1">
+                    Explore the fundamentals of {topic.replace(/-/g, ' ')}.
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-[var(--color-text-secondary)]">No topics available yet. Check back soon!</p>
+        )}
+      </div>
 
-      {/* Add more dashboard content here later */}
+      {/* Example of another card for quick actions or stats */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="card">
+            <h3 className="text-lg font-semibold mb-3">Your Preferences</h3>
+            <p className="text-sm text-[var(--color-text-secondary)] mb-4">
+                Customize your learning experience to suit your needs.
+            </p>
+            <Link to="/profile" className="button-secondary text-sm"> {/* Using generic button class */}
+                Go to Profile Settings
+            </Link>
+        </div>
+         <div className="card">
+            <h3 className="text-lg font-semibold mb-3">Learning Goals (Coming Soon)</h3>
+            <p className="text-sm text-[var(--color-text-secondary)]">
+                Track your progress and set new learning objectives.
+            </p>
+        </div>
+      </div>
     </div>
   );
 };
@@ -846,20 +1400,53 @@ const DashboardPage = () => {
 export default DashboardPage;
 
 ===== File: /src/pages/HomePage.jsx =====
+// src/pages/HomePage.jsx
 import React from 'react';
 import { Link } from 'react-router-dom';
 
 const HomePage = () => {
   return (
-    <div>
-      <h1 className="text-3xl font-bold mb-4 text-primary">Welcome to the Accessible Learning Portal</h1>
-      <p className="mb-4">Your journey to personalized learning starts here.</p>
-      <Link to="/signup" className="bg-secondary hover:bg-pink-500 text-white font-semibold py-2 px-4 rounded transition duration-200 mr-2">
-        Get Started (Sign Up)
-      </Link>
-      <Link to="/login" className="text-primary hover:underline">
-        Already have an account? Login
-      </Link>
+    <div className="text-center py-10 md:py-20"> {/* Added padding for better centering */}
+      <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-6">
+        Welcome to the <br className="sm:hidden" /> {/* Break line on small screens */}
+        <span className="text-primary dark:text-primary-light body-theme-high-contrast:text-hc-link">
+          Accessible Learning Portal
+        </span>
+      </h1>
+      <p className="text-lg sm:text-xl text-[var(--color-text-secondary)] mb-8 max-w-2xl mx-auto">
+        Your journey to personalized and inclusive learning starts here. We adapt to your unique way of learning.
+      </p>
+      <div className="space-y-4 sm:space-y-0 sm:space-x-4">
+        <Link
+          to="/signup"
+          className="button-primary inline-block text-lg px-8 py-3 w-full sm:w-auto" // Using generic button class
+        >
+          Get Started (Sign Up)
+        </Link>
+        <Link
+          to="/login"
+          className="button-secondary inline-block text-lg px-8 py-3 w-full sm:w-auto" // Using generic button class
+        >
+          Already have an account? Login
+        </Link>
+      </div>
+      {/* You could add some feature highlights or graphics here */}
+      {/* For example:
+      <div className="mt-16 grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+        <div className="card p-6">
+          <h3 className="text-xl font-semibold mb-2">Customizable Content</h3>
+          <p className="text-[var(--color-text-secondary)] text-sm">Choose how you learn: text, video, audio, or visual maps.</p>
+        </div>
+        <div className="card p-6">
+          <h3 className="text-xl font-semibold mb-2">Distraction-Free</h3>
+          <p className="text-[var(--color-text-secondary)] text-sm">Minimal UI with adjustable fonts and colors for focus.</p>
+        </div>
+        <div className="card p-6">
+          <h3 className="text-xl font-semibold mb-2">AI Companion</h3>
+          <p className="text-[var(--color-text-secondary)] text-sm">Get personalized guidance and explanations on any topic.</p>
+        </div>
+      </div>
+      */}
     </div>
   );
 };
@@ -867,7 +1454,7 @@ const HomePage = () => {
 export default HomePage;
 
 ===== File: /src/pages/LoginPage.jsx =====
-// src/pages/LoginPage.jsx (Example Structure)
+// src/pages/LoginPage.jsx
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
@@ -875,59 +1462,64 @@ import { useNavigate, Link } from 'react-router-dom';
 const LoginPage = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const { login, loading, error, setError } = useAuth(); // Get setError
+    const { login, loading, error, setError } = useAuth();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setError(null); // Clear previous errors
+        setError(null);
         const success = await login({ email, password });
         if (success) {
-            navigate('/dashboard'); // Redirect on successful login
+            navigate('/dashboard');
         }
     };
 
+    // Example error display class
+    const errorClass = "mb-4 text-sm text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-300 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:text-hc-link body-theme-high-contrast:border body-theme-high-contrast:border-hc-link p-3 rounded";
+
     return (
-        <div className="max-w-md mx-auto mt-10 p-8 border rounded shadow-lg bg-white">
-            <h2 className="text-2xl font-bold mb-6 text-center text-primary">Login</h2>
-            <form onSubmit={handleSubmit}>
-                {error && <p className="mb-4 text-red-500 bg-red-100 p-2 rounded text-sm">{error}</p>}
-                <div className="mb-4">
-                    <label className="block text-gray-700 mb-2" htmlFor="email">Email</label>
-                    <input
-                        type="email"
-                        id="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary-light"
-                        required
-                    />
-                </div>
-                <div className="mb-6">
-                    <label className="block text-gray-700 mb-2" htmlFor="password">Password</label>
-                    <input
-                        type="password"
-                        id="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary-light"
-                        required
-                    />
-                </div>
-                <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded transition duration-200 disabled:opacity-50"
-                >
-                    {loading ? 'Logging in...' : 'Login'}
-                </button>
-            </form>
-             <p className="mt-4 text-center text-sm text-gray-600">
-                Don't have an account?{' '}
-                <Link to="/signup" className="text-primary hover:underline">
-                    Sign up here
-                </Link>
-            </p>
+        <div className="max-w-md mx-auto mt-10">
+            <div className="card"> {/* Using .card class */}
+                <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    {error && <p className={errorClass}>{error}</p>}
+                    <div>
+                        <label className="form-label-default" htmlFor="email">Email</label>
+                        <input
+                            type="email"
+                            id="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="form-input-default" // Using generic input class
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label className="form-label-default" htmlFor="password">Password</label>
+                        <input
+                            type="password"
+                            id="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="form-input-default" // Using generic input class
+                            required
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="button-primary w-full" // Using generic button class
+                    >
+                        {loading ? 'Logging in...' : 'Login'}
+                    </button>
+                </form>
+                <p className="mt-6 text-center text-sm text-[var(--color-text-secondary)]">
+                    Don't have an account?{' '}
+                    <Link to="/signup" className="font-medium"> {/* Link uses global 'a' style */}
+                        Sign up here
+                    </Link>
+                </p>
+            </div>
         </div>
     );
 };
@@ -935,6 +1527,7 @@ const LoginPage = () => {
 export default LoginPage;
 
 ===== File: /src/pages/SignupPage.jsx =====
+// src/pages/SignupPage.jsx
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
@@ -948,84 +1541,117 @@ const SignupPage = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setError(null); // Clear previous errors
+        setError(null);
         const success = await signup({ name, email, password });
         if (success) {
-            navigate('/dashboard'); // Redirect on successful signup
+            navigate('/dashboard');
         }
     };
 
+    const errorClass = "mb-4 text-sm text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-300 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:text-hc-link body-theme-high-contrast:border body-theme-high-contrast:border-hc-link p-3 rounded";
+
+
     return (
-        <div className="max-w-md mx-auto mt-10 p-8 border rounded shadow-lg bg-white">
-            <h2 className="text-2xl font-bold mb-6 text-center text-primary">Create Account</h2>
-            <form onSubmit={handleSubmit}>
-                 {error && <p className="mb-4 text-red-500 bg-red-100 p-2 rounded text-sm">{error}</p>}
-                <div className="mb-4">
-                     <label className="block text-gray-700 mb-2" htmlFor="name">Name (Optional)</label>
-                     <input
-                         type="text"
-                         id="name"
-                         value={name}
-                         onChange={(e) => setName(e.target.value)}
-                         className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary-light"
-                     />
-                 </div>
-                <div className="mb-4">
-                    <label className="block text-gray-700 mb-2" htmlFor="email">Email</label>
-                    <input
-                        type="email"
-                        id="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary-light"
-                        required
-                    />
-                </div>
-                <div className="mb-6">
-                    <label className="block text-gray-700 mb-2" htmlFor="password">Password</label>
-                    <input
-                        type="password"
-                        id="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary-light"
-                        required
-                        minLength="6" // Add basic validation example
-                    />
-                     <p className="text-xs text-gray-500 mt-1">Minimum 6 characters</p>
-                </div>
-                <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded transition duration-200 disabled:opacity-50"
-                >
-                    {loading ? 'Creating Account...' : 'Sign Up'}
-                </button>
-            </form>
-            <p className="mt-4 text-center text-sm text-gray-600">
-                Already have an account?{' '}
-                <Link to="/login" className="text-primary hover:underline">
-                    Login here
-                </Link>
-            </p>
+        <div className="max-w-md mx-auto mt-10">
+            <div className="card"> {/* Using .card class */}
+                <h2 className="text-2xl font-bold mb-6 text-center">Create Account</h2>
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    {error && <p className={errorClass}>{error}</p>}
+                    <div>
+                        <label className="form-label-default" htmlFor="name">Name (Optional)</label>
+                        <input
+                            type="text"
+                            id="name"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            className="form-input-default" // Using generic input class
+                        />
+                    </div>
+                    <div>
+                        <label className="form-label-default" htmlFor="email">Email</label>
+                        <input
+                            type="email"
+                            id="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="form-input-default" // Using generic input class
+                            required
+                        />
+                    </div>
+                    <div>
+                        <label className="form-label-default" htmlFor="password">Password</label>
+                        <input
+                            type="password"
+                            id="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="form-input-default" // Using generic input class
+                            required
+                            minLength="6"
+                        />
+                        <p className="text-xs text-[var(--color-text-secondary)] mt-1">Minimum 6 characters</p>
+                    </div>
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="button-primary w-full" // Using generic button class
+                    >
+                        {loading ? 'Creating Account...' : 'Sign Up'}
+                    </button>
+                </form>
+                <p className="mt-6 text-center text-sm text-[var(--color-text-secondary)]">
+                    Already have an account?{' '}
+                    <Link to="/login" className="font-medium"> {/* Link uses global 'a' style */}
+                        Login here
+                    </Link>
+                </p>
+            </div>
         </div>
     );
 };
 
 export default SignupPage;
 
+===== File: /src/pages/UserProfilePage.jsx =====
+// src/pages/UserProfilePage.jsx
+import React from 'react';
+import UserProfile from '../components/UserProfile'; // Adjust path if needed
+
+const UserProfilePage = () => {
+  return (
+    <div>
+      {/* You can add a page title or other layout elements here if needed */}
+      <UserProfile />
+    </div>
+  );
+};
+
+export default UserProfilePage;
+
 ===== File: /src/pages/admin/AdminContentListPage.jsx =====
 // src/pages/admin/AdminContentListPage.jsx
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getAllContentForAdmin, deleteContent } from '../../services/contentService';
-import { useAuth } from '../../contexts/AuthContext'; // For user role check if needed, though route protects
+// Assuming useAuth is not strictly needed here if AdminRoute protects it, but good for consistency if used elsewhere.
+// import { useAuth } from '../../contexts/AuthContext';
+
+const LoadingMessage = () => <div className="p-4 text-center text-[var(--color-text-secondary)]">Loading content...</div>;
+const ErrorAlert = ({ message }) => (
+    <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700
+                   dark:bg-red-900/20 dark:border-red-700 dark:text-red-300
+                   body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link"
+    role="alert">
+        {message}
+    </div>
+);
+
 
 const AdminContentListPage = () => {
   const [contents, setContents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const { token } = useAuth(); // To ensure API calls are authorized
+  // const { token } = useAuth(); // Only if directly making calls that might not pass through AdminRoute's checks
 
   const fetchContents = async () => {
     setLoading(true);
@@ -1042,16 +1668,15 @@ const AdminContentListPage = () => {
   };
 
   useEffect(() => {
-    if (token) { // Ensure token is available before fetching
-        fetchContents();
-    }
-  }, [token]);
+    fetchContents();
+  }, []); // Fetch on mount
 
   const handleDelete = async (contentId, topic) => {
     if (window.confirm(`Are you sure you want to delete the topic "${topic}"? This action cannot be undone.`)) {
       try {
         await deleteContent(contentId);
         setContents(prevContents => prevContents.filter(c => c._id !== contentId));
+        // Consider a more subtle success message/toast notification
         alert(`Topic "${topic}" deleted successfully.`);
       } catch (err) {
         setError(err.response?.data?.error || `Failed to delete topic "${topic}".`);
@@ -1060,56 +1685,58 @@ const AdminContentListPage = () => {
     }
   };
 
-  if (loading) return <div className="p-4">Loading content...</div>;
+  if (loading) return <LoadingMessage />;
 
   return (
-    <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-primary">Manage Content</h1>
+    <div className="space-y-6"> {/* Add consistent spacing */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1>Manage Content</h1> {/* Uses global H1 style */}
         <Link
           to="/admin/content/create"
-          className="bg-secondary hover:bg-pink-500 text-white font-semibold py-2 px-4 rounded transition duration-200"
+          className="button-primary text-sm whitespace-nowrap" // Using generic button class
         >
           Create New Content
         </Link>
       </div>
 
-      {error && <p className="text-red-500 bg-red-100 p-3 rounded mb-4">{error}</p>}
+      {error && <ErrorAlert message={error} />}
 
       {contents.length === 0 && !loading && (
-        <p>No content found. Get started by creating some!</p>
+        <div className="card text-center py-8"> {/* Using .card class */}
+            <p className="text-[var(--color-text-secondary)]">No content found. Get started by creating some!</p>
+        </div>
       )}
 
       {contents.length > 0 && (
-        <div className="overflow-x-auto bg-white shadow-md rounded-lg">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+        <div className="card overflow-x-auto p-0 md:p-0"> {/* Remove padding for table to fit edges */}
+          <table className="min-w-full divide-y divide-[var(--color-border)]">
+            <thead className="bg-gray-100 dark:bg-slate-800 body-theme-high-contrast:bg-gray-900"> {/* Slightly different bg for thead */}
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Topic</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tags</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created At</th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Topic</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Tags</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Created At</th>
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="divide-y divide-[var(--color-border)]">
               {contents.map((content) => (
-                <tr key={content._id}>
+                <tr key={content._id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 body-theme-high-contrast:hover:bg-gray-700"> {/* Hover effect */}
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900 capitalize">{content.topic?.replace('-', ' ')}</div>
+                    <div className="text-sm font-medium text-[var(--color-text-primary)] capitalize">{content.topic?.replace('-', ' ')}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">{content.tags?.join(', ')}</div>
+                    <div className="text-sm text-[var(--color-text-secondary)]">{content.tags?.join(', ') || 'N/A'}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-gray-500">{new Date(content.createdAt).toLocaleDateString()}</div>
+                    <div className="text-sm text-[var(--color-text-secondary)]">{new Date(content.createdAt).toLocaleDateString()}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <Link to={`/admin/content/edit/${content._id}`} className="text-indigo-600 hover:text-indigo-900 mr-3">
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
+                    <Link to={`/admin/content/edit/${content._id}`} className="text-primary dark:text-primary-light body-theme-high-contrast:text-hc-link hover:underline">
                       Edit
                     </Link>
                     <button
                       onClick={() => handleDelete(content._id, content.topic)}
-                      className="text-red-600 hover:text-red-900"
+                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 body-theme-high-contrast:text-red-400 body-theme-high-contrast:hover:text-red-300 hover:underline"
                     >
                       Delete
                     </button>
@@ -1131,46 +1758,30 @@ export default AdminContentListPage;
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { createContent } from '../../services/contentService';
+import TagInput from '../../components/admin/TagInput'; // Import TagInput
+import DynamicUrlInput from '../../components/admin/DynamicUrlInput'; // Import DynamicUrlInput
 
-// A simple reusable form field component (optional, but can reduce repetition)
-const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder }) => (
-  <div className="mb-4">
-    <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}{required && <span className="text-red-500">*</span>}</label>
-    {textarea ? (
-      <textarea
-        id={id}
-        name={id}
-        rows="10"
-        value={value}
-        onChange={onChange}
-        required={required}
-        placeholder={placeholder}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
-      />
-    ) : (
-      <input
-        type={type}
-        id={id}
-        name={id}
-        value={value}
-        onChange={onChange}
-        required={required}
-        placeholder={placeholder}
-        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary"
-      />
-    )}
+// FormField component (can be kept here or moved to a common components folder if not already)
+const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder, name, rows = 3 }) => (
+  <div className="form-field-default">
+    <label htmlFor={id || name} className="form-label-default">{label}{required && <span className="text-red-500 ml-1">*</span>}</label>
+    {textarea ? ( <textarea id={id || name} name={name || id} rows={rows} value={value} onChange={onChange} required={required} placeholder={placeholder} className="form-input-default"/>
+    ) : ( <input type={type} id={id || name} name={name || id} value={value} onChange={onChange} required={required} placeholder={placeholder} className="form-input-default"/> )}
   </div>
 );
-
+const ErrorAlert = ({ message }) => ( /* ... same as before ... */
+    <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700 dark:bg-red-900/20 dark:border-red-700 dark:text-red-300 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link" role="alert">{message}</div>
+);
 
 const AdminCreateContentPage = () => {
   const [formData, setFormData] = useState({
     topic: '',
     originalText: '',
-    tags: '', // Comma-separated string for tags
-    imageUrls: '', // Comma-separated string for image URLs
-    // videoExplainers and audioNarrations might be handled differently in a more complex UI
+    // tags and imageUrls will be managed by their respective components
   });
+  const [tags, setTags] = useState([]); // State for tags
+  const [imageUrls, setImageUrls] = useState([]); // State for image URLs
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
@@ -1187,12 +1798,18 @@ const AdminCreateContentPage = () => {
 
     const contentData = {
       ...formData,
-      tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
-      imageUrls: formData.imageUrls ? formData.imageUrls.split(',').map(url => url.trim()).filter(Boolean) : [],
-      // For MVP, videoExplainers and audioNarrations can be empty arrays or handled later
+      topic: formData.topic.trim(),
+      tags: tags, // Use the state variable
+      imageUrls: imageUrls, // Use the state variable
       videoExplainers: [],
       audioNarrations: [],
     };
+
+    if (!contentData.topic || !contentData.originalText) {
+        setError("Topic and Original Text are required.");
+        setLoading(false);
+        return;
+    }
 
     try {
       await createContent(contentData);
@@ -1200,60 +1817,41 @@ const AdminCreateContentPage = () => {
       navigate('/admin/content');
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create content.');
-      console.error("Create content error:", err);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="container mx-auto p-4">
-      <Link to="/admin/content" className="text-primary hover:underline mb-4 inline-block">← Back to Content List</Link>
-      <h1 className="text-3xl font-bold text-primary mb-6">Create New Content</h1>
+    <div className="space-y-6">
+      <Link to="/admin/content" className="text-sm inline-block mb-2">← Back to Content List</Link>
+      <h1>Create New Content</h1>
 
-      <form onSubmit={handleSubmit} className="max-w-2xl mx-auto bg-white p-8 shadow-md rounded-lg">
-        {error && <p className="text-red-500 bg-red-100 p-3 rounded mb-4">{error}</p>}
+      <form onSubmit={handleSubmit} className="card max-w-2xl mx-auto p-6 md:p-8">
+        {error && <ErrorAlert message={error} />}
 
-        <FormField
-          id="topic"
-          label="Topic Title"
-          value={formData.topic}
-          onChange={handleChange}
-          required
-          placeholder="e.g., Photosynthesis Basics"
-        />
-        <FormField
-          id="originalText"
-          label="Original Content Text"
-          value={formData.originalText}
-          onChange={handleChange}
-          textarea
-          required
-          placeholder="Enter the full educational text here..."
-        />
-        <FormField
-          id="tags"
-          label="Tags (comma-separated)"
-          value={formData.tags}
-          onChange={handleChange}
-          placeholder="e.g., biology, science, plants"
-        />
-        <FormField
-          id="imageUrls"
-          label="Image URLs (comma-separated)"
-          value={formData.imageUrls}
-          onChange={handleChange}
-          placeholder="e.g., https://example.com/image1.jpg, https://example.com/image2.png"
+        <FormField name="topic" label="Topic Title" value={formData.topic} onChange={handleChange} required placeholder="e.g., Photosynthesis Basics"/>
+        <FormField name="originalText" label="Original Content Text" value={formData.originalText} onChange={handleChange} textarea rows="10" required placeholder="Enter the full educational text here..."/>
+        
+        <TagInput
+          initialTags={tags}
+          onChange={setTags} // Pass the setter function
+          label="Tags"
+          placeholder="Add relevant tags"
         />
 
-        {/* More complex fields for videoExplainers, audioNarrations could be added here */}
-        {/* For example, a way to add multiple URL inputs for videos */}
+        <DynamicUrlInput
+          initialUrls={imageUrls}
+          onChange={setImageUrls} // Pass the setter function
+          label="Image URLs"
+          placeholder="https://example.com/image.jpg"
+        />
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded transition duration-200 disabled:opacity-50"
-        >
+        <p className="text-xs text-[var(--color-text-secondary)] mt-6 mb-2">
+            Video explainers and audio narrations can be added after creation via the "Edit Content" page.
+        </p>
+
+        <button type="submit" disabled={loading} className="button-primary w-full mt-4">
           {loading ? 'Creating...' : 'Create Content'}
         </button>
       </form>
@@ -1385,81 +1983,81 @@ export default AdminDashboardPage;
 ===== File: /src/pages/admin/AdminEditContentPage.jsx =====
 // src/pages/admin/AdminEditContentPage.jsx
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { getContentByIdForAdmin, updateContent } from '../../services/contentService';
-import MermaidDiagram from '../../components/common/MermaidDiagram'; // Adjust path if needed
+import MermaidDiagram from '../../components/common/MermaidDiagram';
+import TagInput from '../../components/admin/TagInput';
+import DynamicUrlInput from '../../components/admin/DynamicUrlInput';
+import { toast } from 'react-toastify'; // Import react-toastify
 
-// Reusable FormField component (can be moved to a common components folder)
-const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder, disabled = false }) => (
-  <div className="mb-4">
-    <label htmlFor={id} className="block text-sm font-medium text-gray-700 mb-1">{label}{required && !disabled && <span className="text-red-500">*</span>}</label>
+// Reusable FormField component
+const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder, disabled = false, name, rows = 3, children }) => (
+  <div className="form-field-default">
+    <label htmlFor={id || name} className="form-label-default">{label}{required && !disabled && <span className="text-red-500 ml-1">*</span>}</label>
     {textarea ? (
-      <textarea
-        id={id}
-        name={id}
-        rows="10"
-        value={value}
-        onChange={onChange}
-        required={required && !disabled}
-        placeholder={placeholder}
-        disabled={disabled}
-        className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-      />
+      <textarea id={id || name} name={name || id} rows={rows} value={value} onChange={onChange} required={required && !disabled} placeholder={placeholder} disabled={disabled} className={`form-input-default ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}/>
+    ) : children ? (
+      <div className={`form-input-default p-0 ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}>{children}</div>
     ) : (
-      <input
-        type={type}
-        id={id}
-        name={id}
-        value={value}
-        onChange={onChange}
-        required={required && !disabled}
-        placeholder={placeholder}
-        disabled={disabled}
-        className={`w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-primary focus:border-primary ${disabled ? 'bg-gray-100 cursor-not-allowed' : ''}`}
-      />
+      <input type={type} id={id || name} name={name || id} value={value} onChange={onChange} required={required && !disabled} placeholder={placeholder} disabled={disabled} className={`form-input-default ${disabled ? 'opacity-70 cursor-not-allowed' : ''}`}/>
     )}
   </div>
+);
+
+const LoadingMessage = () => <div className="p-6 text-center text-[var(--color-text-secondary)]">Loading content details...</div>;
+
+// ErrorAlert for initial page load failure if needed, but toast primarily handles errors
+const PageLoadError = ({ message }) => (
+    <div className="p-6 text-center card my-4">
+        <p className="text-red-600 dark:text-red-400 body-theme-high-contrast:text-hc-link mb-4">{message}</p>
+        <Link to="/admin/content" className="button-secondary text-sm">Go back to list</Link>
+    </div>
 );
 
 
 const AdminEditContentPage = () => {
   const { contentId } = useParams();
-  const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
     topic: '',
     originalText: '',
-    tags: '', // Comma-separated string for UI
-    imageUrls: '', // Comma-separated string for UI
-    videoExplainers: [], // Array of objects: { source, url, title, description }
-    audioNarrations: [], // Array of objects: { language, voice, url }
-    simplifiedVersions: [], // For display
-    visualMaps: [],         // For display
+    videoExplainers: [],
+    audioNarrations: [],
+    simplifiedVersions: [],
+    visualMaps: [],
   });
+  const [tags, setTags] = useState([]);
+  const [imageUrls, setImageUrls] = useState([]); // For DynamicUrlInput (editable)
+  const [initialImageGallery, setInitialImageGallery] = useState([]); // For gallery preview of saved images
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+  // Error state is mostly handled by toasts, but can be used for critical page load failures
 
   useEffect(() => {
     const fetchContent = async () => {
       setLoading(true);
-      setError(null);
+      // toast.dismiss(); // Optional: clear any existing toasts on new fetch
       try {
         const data = await getContentByIdForAdmin(contentId);
         setFormData({
           topic: data.topic || '',
           originalText: data.originalText || '',
-          tags: data.tags?.join(', ') || '',
-          imageUrls: data.media?.imageUrls?.join(', ') || '',
           videoExplainers: data.videoExplainers || [],
           audioNarrations: data.audioNarrations || [],
           simplifiedVersions: data.simplifiedVersions || [],
           visualMaps: data.visualMaps || [],
         });
+        setTags(data.tags || []);
+        const fetchedImageUrls = data.media?.imageUrls || [];
+        setImageUrls(fetchedImageUrls);
+        setInitialImageGallery(fetchedImageUrls);
       } catch (err) {
-        setError(err.response?.data?.error || `Failed to fetch content (ID: ${contentId}) for editing.`);
+        const fetchErrorMsg = err.response?.data?.error || `Failed to fetch content (ID: ${contentId}).`;
+        toast.error(fetchErrorMsg);
         console.error("Fetch content for edit error:", err);
+        // If fetch fails catastrophically, we might still want to set a page-level error
+        // For now, toast is primary.
       } finally {
         setLoading(false);
       }
@@ -1467,7 +2065,7 @@ const AdminEditContentPage = () => {
     if (contentId) {
         fetchContent();
     } else {
-        setError("Content ID is missing.");
+        toast.error("Content ID is missing.");
         setLoading(false);
     }
   }, [contentId]);
@@ -1477,222 +2075,203 @@ const AdminEditContentPage = () => {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // --- Handlers for videoExplainers array field ---
-  const handleVideoChange = (index, field, value) => {
-    const updatedVideos = formData.videoExplainers.map((video, i) =>
-      i === index ? { ...video, [field]: value } : video
-    );
-    setFormData(prev => ({ ...prev, videoExplainers: updatedVideos }));
+  const handleArrayChange = (setterFunc, fieldData) => {
+    setterFunc(fieldData);
   };
 
-  const handleAddVideoField = () => {
-    setFormData(prev => ({
-      ...prev,
-      videoExplainers: [
-        ...prev.videoExplainers,
-        { source: 'youtube', url: '', title: '', description: '' }
-      ]
-    }));
-  };
-
-  const handleRemoveVideoField = (index) => {
-    setFormData(prev => ({
-      ...prev,
-      videoExplainers: prev.videoExplainers.filter((_, i) => i !== index)
-    }));
-  };
-
-  // --- Handlers for audioNarrations (example if you implement a similar UI) ---
-  const handleAudioChange = (index, field, value) => {
-    const updatedAudios = formData.audioNarrations.map((audio, i) =>
-        i === index ? { ...audio, [field]: value } : audio
-    );
-    setFormData(prev => ({ ...prev, audioNarrations: updatedAudios }));
-  };
-
-  const handleAddAudioField = () => {
-    setFormData(prev => ({
-        ...prev,
-        audioNarrations: [
-            ...prev.audioNarrations,
-            { language: 'en-US', voice: 'default', url: '' }
-        ]
-    }));
-  };
-
-  const handleRemoveAudioField = (index) => {
-    setFormData(prev => ({
-        ...prev,
-        audioNarrations: prev.audioNarrations.filter((_, i) => i !== index)
-    }));
-  };
-
+  const handleVideoChange = (index, field, value) => handleArrayChange(setFormData, prev => ({ ...prev, videoExplainers: prev.videoExplainers.map((video, i) => i === index ? { ...video, [field]: value } : video)}));
+  const handleAddVideoField = () => handleArrayChange(setFormData, prev => ({ ...prev, videoExplainers: [...prev.videoExplainers, { source: 'youtube', url: '', title: '', description: '' }]}));
+  const handleRemoveVideoField = (index) => handleArrayChange(setFormData, prev => ({ ...prev, videoExplainers: prev.videoExplainers.filter((_, i) => i !== index)}));
+  const handleAudioChange = (index, field, value) => handleArrayChange(setFormData, prev => ({ ...prev, audioNarrations: prev.audioNarrations.map((audio, i) => i === index ? { ...audio, [field]: value } : audio)}));
+  const handleAddAudioField = () => handleArrayChange(setFormData, prev => ({ ...prev, audioNarrations: [...prev.audioNarrations, { language: 'en-US', voice: 'default', url: '' }]}));
+  const handleRemoveAudioField = (index) => handleArrayChange(setFormData, prev => ({ ...prev, audioNarrations: prev.audioNarrations.filter((_, i) => i !== index)}));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.topic || !formData.originalText) {
-        setError("Topic and Original Text are required.");
+        toast.error("Topic Title and Original Text are required.");
         return;
     }
     setSaving(true);
-    setError(null);
 
     const contentDataToUpdate = {
       topic: formData.topic,
       originalText: formData.originalText,
-      tags: formData.tags ? formData.tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
-      imageUrls: formData.imageUrls ? formData.imageUrls.split(',').map(url => url.trim()).filter(Boolean) : [],
+      tags: tags,
+      imageUrls: imageUrls.filter(url => url && url.trim() !== ''),
       videoExplainers: formData.videoExplainers.filter(video => video.url && video.url.trim() !== ''),
       audioNarrations: formData.audioNarrations.filter(audio => audio.url && audio.url.trim() !== ''),
-      // simplifiedVersions and visualMaps are generally not sent for update from admin UI unless direct edit is intended
     };
 
     try {
-      await updateContent(contentId, contentDataToUpdate);
-      alert('Content updated successfully!');
-      navigate('/admin/content');
+      const updatedContent = await updateContent(contentId, contentDataToUpdate);
+      toast.success('Content updated successfully!');
+      
+      if (updatedContent) {
+        setFormData(prev => ({
+            ...prev,
+            topic: updatedContent.topic || prev.topic,
+            originalText: updatedContent.originalText || prev.originalText,
+            videoExplainers: updatedContent.videoExplainers || [],
+            audioNarrations: updatedContent.audioNarrations || [],
+            simplifiedVersions: updatedContent.simplifiedVersions || [],
+            visualMaps: updatedContent.visualMaps || [],
+        }));
+        const updatedImageUrls = updatedContent.media?.imageUrls || [];
+        setTags(updatedContent.tags || []);
+        setImageUrls(updatedImageUrls);
+        setInitialImageGallery(updatedImageUrls);
+      }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to update content.');
+      const updateErrorMsg = err.response?.data?.error || 'Failed to update content.';
+      toast.error(updateErrorMsg);
       console.error("Update content error:", err);
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) return <div className="p-6 text-center">Loading content details...</div>;
-  if (error && !formData.topic) return <div className="p-6 text-center text-red-600 bg-red-50">{error} <Link to="/admin/content" className="text-blue-500 underline">Go back</Link></div>;
-
+  if (loading && !formData.topic) return <LoadingMessage />;
+  if (!loading && !formData.topic && contentId) {
+      return <PageLoadError message={`Failed to load content with ID: ${contentId}. It might have been deleted or an error occurred.`} />
+  }
 
   return (
-    <div className="container mx-auto p-4 md:p-6">
-      <div className="mb-6">
-        <Link to="/admin/content" className="text-primary hover:underline text-sm">
-          ← Back to Content List
-        </Link>
+    <div className="space-y-6 pb-12">
+      {/* ToastContainer is in App.js */}
+      <div className="flex justify-between items-center mb-2">
+        <Link to="/admin/content" className="text-sm">← Back to Content List</Link>
       </div>
-      <h1 className="text-2xl md:text-3xl font-bold text-primary mb-6">
-        Edit Content: <span className="capitalize">{formData.topic || "Loading topic..."}</span>
-      </h1>
+      <h1>Edit Content: <span className="capitalize text-[var(--color-link)]">{formData.topic.replace(/-/g,' ') || "Loading..."}</span></h1>
 
-      <form onSubmit={handleSubmit} className="max-w-3xl mx-auto bg-white p-6 md:p-8 shadow-lg rounded-lg">
-        {error && <p className="text-red-600 bg-red-100 p-3 rounded mb-4 text-sm">{error}</p>}
-
-        <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
-            <legend className="text-lg font-semibold text-gray-700 px-2">Core Content</legend>
-            <FormField id="topic" label="Topic Title" value={formData.topic} onChange={handleChange} required />
-            <FormField id="originalText" label="Original Content Text" value={formData.originalText} onChange={handleChange} textarea required />
-            <FormField id="tags" label="Tags (comma-separated)" value={formData.tags} onChange={handleChange} placeholder="e.g., biology, science, plants" />
-            <FormField id="imageUrls" label="Image URLs (comma-separated)" value={formData.imageUrls} onChange={handleChange} placeholder="e.g., https://example.com/image.jpg" />
+      <form onSubmit={handleSubmit} className="card max-w-3xl mx-auto p-6 md:p-8">
+        <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
+            <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Core Content</legend>
+            <FormField 
+              name="topicDisplay"
+              label="Topic Title" 
+              value={formData.topic.replace(/-/g,' ')}
+              onChange={(e) => {
+                  setFormData(prev => ({...prev, topic: e.target.value.toLowerCase().trim().replace(/\s+/g, '-')}));
+              }} 
+              required 
+            />
+            <FormField name="originalText" label="Original Content Text" value={formData.originalText} onChange={handleChange} textarea rows="10" required />
+            <TagInput 
+              initialTags={tags} 
+              onChange={(newTags) => handleArrayChange(setTags, newTags)} 
+              label="Tags"
+            />
+            <DynamicUrlInput // This component shows previews for URLs being edited
+              initialUrls={imageUrls} 
+              onChange={(newUrls) => handleArrayChange(setImageUrls, newUrls)} 
+              label="Image URLs (Editable)" 
+            />
         </fieldset>
 
-        {/* --- Section for Video Explainers --- */}
-        <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
-          <legend className="text-lg font-semibold text-gray-700 px-2">Video Explainers</legend>
-          {formData.videoExplainers.map((video, index) => (
-            <div key={index} className="mb-4 p-3 border border-gray-200 rounded-md relative bg-gray-50">
-              <button
-                type="button"
-                onClick={() => handleRemoveVideoField(index)}
-                className="absolute top-2 right-2 text-red-500 hover:text-red-700 text-xs px-2 py-1 bg-white border border-red-300 rounded"
-                title="Remove Video"
-              >
-                Remove
-              </button>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
-                <FormField id={`videoUrl-${index}`} label="URL" placeholder="https://www.youtube.com/watch?v=..." value={video.url} onChange={(e) => handleVideoChange(index, 'url', e.target.value)} required />
-                <div>
-                  <label htmlFor={`videoSource-${index}`} className="block text-sm font-medium text-gray-700 mb-1">Source</label>
-                  <select
-                    id={`videoSource-${index}`}
-                    value={video.source}
-                    onChange={(e) => handleVideoChange(index, 'source', e.target.value)}
-                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm focus:outline-none focus:ring-primary focus:border-primary"
-                  >
-                    <option value="youtube">YouTube</option>
-                    <option value="vimeo">Vimeo</option>
-                    <option value="custom_upload">Custom Upload</option>
-                    <option value="generated">AI Generated</option>
-                  </select>
+        {/* Gallery Preview of Saved Images */}
+        {initialImageGallery && initialImageGallery.length > 0 && (
+            <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
+                <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Current Saved Images</legend>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mt-2">
+                    {initialImageGallery.map((url, index) => (
+                        url && typeof url === 'string' && url.trim() !== '' ? (
+                            <div key={`gallery-${index}-${url}`} className="aspect-square bg-[var(--color-border)] rounded overflow-hidden shadow">
+                                <img 
+                                    src={url} 
+                                    alt={`Saved content image ${index + 1}`}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                    onError={(e) => { e.target.style.display='none'; if(e.target.parentElement) e.target.parentElement.innerHTML='<span class="text-xs p-1 text-red-500">Load Error</span>';}}
+                                />
+                            </div>
+                        ) : null
+                    ))}
                 </div>
+                <p className="text-xs text-[var(--color-text-secondary)] mt-2">
+                    To change images, edit the "Image URLs (Editable)" section above and save.
+                </p>
+            </fieldset>
+        )}
+
+        {/* Video Explainers Fieldset */}
+        <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
+          <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Video Explainers</legend>
+           {formData.videoExplainers.map((video, index) => (
+            <div key={index} className="mb-4 p-3 border border-[var(--color-border)] rounded-md relative bg-[var(--color-background)] shadow-sm dark:bg-slate-800/30 body-theme-high-contrast:bg-gray-900">
+              <button type="button" onClick={() => handleRemoveVideoField(index)} className="absolute top-2 right-2 text-red-500 hover:text-red-700 text-xs px-2 py-1 bg-white dark:bg-slate-700 dark:text-red-400 dark:hover:text-red-300 border border-red-300 dark:border-red-500 rounded body-theme-high-contrast:bg-hc-background body-theme-high-contrast:text-red-400 body-theme-high-contrast:border-red-400" title="Remove Video">Remove</button>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4">
+                <FormField name={`videoUrl-${index}`} label="URL" value={video.url} onChange={(e) => handleVideoChange(index, 'url', e.target.value)} required />
+                <FormField name={`videoSource-${index}`} label="Source">
+                    <select id={`videoSource-${index}`} value={video.source} onChange={(e) => handleVideoChange(index, 'source', e.target.value)} className="w-full h-full bg-transparent border-none focus:ring-0 form-select">
+                        <option value="youtube">YouTube</option> <option value="vimeo">Vimeo</option> <option value="custom_upload">Custom Upload</option> <option value="generated">AI Generated</option>
+                  </select>
+                </FormField>
               </div>
-              <FormField id={`videoTitle-${index}`} label="Title (optional)" placeholder="Video Title" value={video.title} onChange={(e) => handleVideoChange(index, 'title', e.target.value)} />
-              <FormField id={`videoDesc-${index}`} label="Description (brief, optional)" placeholder="Brief description" value={video.description} onChange={(e) => handleVideoChange(index, 'description', e.target.value)} textarea />
+              <FormField name={`videoTitle-${index}`} label="Title (optional)" value={video.title} onChange={(e) => handleVideoChange(index, 'title', e.target.value)} />
+              <FormField name={`videoDesc-${index}`} label="Description (brief, optional)" value={video.description} onChange={(e) => handleVideoChange(index, 'description', e.target.value)} textarea rows="2" />
             </div>
           ))}
-          <button
-            type="button"
-            onClick={handleAddVideoField}
-            className="mt-2 bg-green-100 hover:bg-green-200 text-green-700 text-sm font-medium py-2 px-3 rounded-md transition duration-150 border border-green-300"
-          >
-            + Add Video Explainer
-          </button>
+          <button type="button" onClick={handleAddVideoField} className="button-secondary text-sm">+ Add Video Explainer</button>
         </fieldset>
 
-        {/* --- Section for Audio Narrations (Example Structure) --- */}
-        <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
-            <legend className="text-lg font-semibold text-gray-700 px-2">Audio Narrations</legend>
+        {/* Audio Narrations Fieldset */}
+        <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
+            <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Audio Narrations (Manual URLs)</legend>
             {formData.audioNarrations.map((audio, index) => (
-                <div key={index} className="mb-4 p-3 border border-gray-200 rounded-md relative bg-gray-50">
-                    <button type="button" onClick={() => handleRemoveAudioField(index)} className="absolute top-2 right-2 text-red-500 hover:text-red-700 text-xs px-2 py-1 bg-white border border-red-300 rounded" title="Remove Audio">Remove</button>
-                    <FormField id={`audioUrl-${index}`} label="Audio URL" placeholder="https://example.com/audio.mp3" value={audio.url} onChange={(e) => handleAudioChange(index, 'url', e.target.value)} required />
-                    {/* You could add fields for language and voice if needed */}
-                    {/* <FormField id={`audioLang-${index}`} label="Language" value={audio.language} onChange={(e) => handleAudioChange(index, 'language', e.target.value)} /> */}
+                <div key={index} className="mb-4 p-3 border border-[var(--color-border)] rounded-md relative bg-[var(--color-background)] shadow-sm dark:bg-slate-800/30 body-theme-high-contrast:bg-gray-900">
+                    <button type="button" onClick={() => handleRemoveAudioField(index)} className="absolute top-2 right-2 text-red-500 hover:text-red-700 text-xs px-2 py-1 bg-white dark:bg-slate-700 dark:text-red-400 dark:hover:text-red-300 border border-red-300 dark:border-red-500 rounded body-theme-high-contrast:bg-hc-background body-theme-high-contrast:text-red-400 body-theme-high-contrast:border-red-400" title="Remove Audio">Remove</button>
+                    <FormField name={`audioUrl-${index}`} label="Audio URL" value={audio.url} onChange={(e) => handleAudioChange(index, 'url', e.target.value)} required />
                 </div>
             ))}
-            <button type="button" onClick={handleAddAudioField} className="mt-2 bg-green-100 hover:bg-green-200 text-green-700 text-sm font-medium py-2 px-3 rounded-md transition duration-150 border border-green-300">
-                + Add Audio Narration
-            </button>
+            <button type="button" onClick={handleAddAudioField} className="button-secondary text-sm">+ Add Audio Narration URL</button>
         </fieldset>
+        
+        {/* Read-Only AI Sections */}
+         {(formData.simplifiedVersions?.length > 0 || formData.visualMaps?.length > 0) && (
+          <div className="space-y-6 mt-6">
+            {formData.simplifiedVersions?.length > 0 && (
+              <fieldset className="border border-[var(--color-border)] p-4 rounded-md">
+                <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">AI-Generated Simplified Texts</legend>
+                {formData.simplifiedVersions.map((version, index) => (
+                  <div key={`simple-${index}-${version.level}`} className="mb-3 p-3 border border-[var(--color-border)] rounded-md bg-[var(--color-background)] shadow-sm dark:bg-slate-800/30 body-theme-high-contrast:bg-gray-900">
+                    <div className="flex justify-between items-center mb-1">
+                        <p className="text-sm font-semibold text-[var(--color-text-primary)]">Level: <span className="capitalize font-normal bg-primary/10 text-primary dark:bg-primary-light/20 dark:text-primary-light px-2 py-0.5 rounded-full text-xs body-theme-high-contrast:bg-hc-link body-theme-high-contrast:text-hc-background">{version.level}</span></p>
+                        <p className="text-xs text-[var(--color-text-secondary)]">{new Date(version.createdAt).toLocaleString()}</p>
+                    </div>
+                    <div className="mt-1 p-2 bg-[var(--color-card-background)] border border-[var(--color-border)] rounded max-h-48 overflow-y-auto text-sm">
+                    <pre className="whitespace-pre-wrap break-words text-[var(--color-text-primary)]">{version.text}</pre>
+                    </div>
+                  </div>
+                ))}
+              </fieldset>
+            )}
 
-
-        {/* --- Section for AI-Generated Simplified Versions (Read-Only) --- */}
-        {formData.simplifiedVersions && formData.simplifiedVersions.length > 0 && (
-          <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
-            <legend className="text-lg font-semibold text-gray-700 px-2">AI-Generated Simplified Texts</legend>
-            {formData.simplifiedVersions.map((version, index) => (
-              <div key={index} className="mb-3 p-3 border border-gray-200 rounded-md bg-gray-50">
-                <div className="flex justify-between items-center mb-1">
-                    <p className="text-sm font-semibold text-gray-700">Level: <span className="capitalize font-normal bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-xs">{version.level}</span></p>
-                    <p className="text-xs text-gray-500">Generated: {new Date(version.createdAt).toLocaleString()}</p>
-                </div>
-                <div className="mt-1 p-2 bg-white border rounded max-h-48 overflow-y-auto text-sm">
-                  <pre className="whitespace-pre-wrap break-words">{version.text}</pre>
-                </div>
-              </div>
-            ))}
-            {/* Optional: Button to clear cached simplified versions */}
-          </fieldset>
+            {formData.visualMaps?.length > 0 && (
+              <fieldset className="border border-[var(--color-border)] p-4 rounded-md">
+                <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">AI-Generated Visual Maps</legend>
+                {formData.visualMaps.map((vMap, index) => (
+                  <div key={`vmap-${index}-${vMap.format}`} className="mb-3 p-3 border border-[var(--color-border)] rounded-md bg-[var(--color-background)] shadow-sm dark:bg-slate-800/30 body-theme-high-contrast:bg-gray-900">
+                    <div className="flex justify-between items-center mb-1">
+                        <p className="text-sm font-semibold text-[var(--color-text-primary)]">Format: <span className="capitalize font-normal bg-secondary/10 text-secondary dark:bg-secondary-light/20 dark:text-secondary-light px-2 py-0.5 rounded-full text-xs body-theme-high-contrast:bg-hc-link body-theme-high-contrast:text-hc-background">{vMap.format}</span></p>
+                        <p className="text-xs text-[var(--color-text-secondary)]">{new Date(vMap.createdAt).toLocaleString()}</p>
+                    </div>
+                    <div className="mt-1 p-2 bg-[var(--color-card-background)] border border-[var(--color-border)] rounded max-h-[400px] overflow-y-auto"> {/* Increased max-h */}
+                    {vMap.format === 'mermaid' ? (
+                        <MermaidDiagram chartData={vMap.data} diagramId={`admin-map-${contentId}-${index}-${new Date(vMap.createdAt).getTime()}`} />  
+                    ) : (
+                        <pre className="text-sm whitespace-pre-wrap break-words text-[var(--color-text-primary)]">{vMap.data}</pre>
+                    )}
+                    </div>
+                    {vMap.notes && <p className="text-xs text-[var(--color-text-secondary)] mt-1 italic">Notes: {vMap.notes}</p>}
+                  </div>
+                ))}
+              </fieldset>
+            )}
+          </div>
         )}
 
-        {/* --- Section for AI-Generated Visual Maps (Read-Only) --- */}
-        {formData.visualMaps && formData.visualMaps.length > 0 && (
-          <fieldset className="border border-gray-300 p-4 rounded-md mb-6">
-            <legend className="text-lg font-semibold text-gray-700 px-2">AI-Generated Visual Maps</legend>
-            {formData.visualMaps.map((vMap, index) => (
-              <div key={index} className="mb-3 p-3 border border-gray-200 rounded-md bg-gray-50">
-                <div className="flex justify-between items-center mb-1">
-                    <p className="text-sm font-semibold text-gray-700">Format: <span className="capitalize font-normal bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full text-xs">{vMap.format}</span></p>
-                    <p className="text-xs text-gray-500">Generated: {new Date(vMap.createdAt).toLocaleString()}</p>
-                </div>
-                <div className="mt-1 p-2 bg-white border rounded max-h-96 overflow-y-auto">
-                  {vMap.format === 'mermaid' ? (
-                    <MermaidDiagram chartData={vMap.data} diagramId={`admin-map-${contentId}-${index}`} />
-                  ) : (
-                    <pre className="text-sm whitespace-pre-wrap break-words">{vMap.data}</pre>
-                  )}
-                </div>
-                {vMap.notes && <p className="text-xs text-gray-600 mt-1 italic">Notes: {vMap.notes}</p>}
-              </div>
-            ))}
-            {/* Optional: Button to clear cached visual maps */}
-          </fieldset>
-        )}
-
-        <button
-          type="submit"
-          disabled={saving || loading}
-          className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2.5 px-4 rounded-md transition duration-200 disabled:opacity-60"
-        >
+        <button type="submit" disabled={saving || loading} className="button-primary w-full mt-8">
           {saving ? 'Saving Changes...' : 'Save Changes'}
         </button>
       </form>
