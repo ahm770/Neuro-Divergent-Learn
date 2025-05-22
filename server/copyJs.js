@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 
 const outputFile = path.join(__dirname, 'merged_js.txt');
-const targetDirs = ['utils', 'middlewares', 'controllers', 'config', 'models', 'routes', 'services'];
+const targetDirs = ['utils', 'middleware', 'controllers', 'config', 'models', 'routes', 'services'];
 const allowedExtension = '.js';
 
 // Files to include separately

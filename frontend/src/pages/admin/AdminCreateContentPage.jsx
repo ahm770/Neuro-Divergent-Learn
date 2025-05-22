@@ -20,14 +20,14 @@ const ErrorAlert = ({ message }) => (
 
 const AdminCreateContentPage = () => {
   const [formData, setFormData] = useState({
-    topic: '', // This will be the human-readable title, slug generated on backend
+    topic: '', 
     originalText: '',
   });
   const [tags, setTags] = useState([]);
   const [imageUrls, setImageUrls] = useState([]);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null); // For form-level persistent errors
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
   const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
 
@@ -40,16 +40,15 @@ const AdminCreateContentPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(null); // Clear previous form error
-    // toast.dismiss(); // Clear existing toasts
+    setError(null); 
 
     const contentData = {
       ...formData,
-      topic: formData.topic.trim(), // Send human-readable title
+      topic: formData.topic.trim(), 
       tags: tags,
-      imageUrls: imageUrls.filter(url => url && url.trim() !== ''), // Filter out empty strings
-      videoExplainers: [], // Initialize as empty, can be added in edit
-      audioNarrations: [], // Initialize as empty, can be added in edit
+      imageUrls: imageUrls.filter(url => url && url.trim() !== ''),
+      videoExplainers: [], 
+      audioNarrations: [], 
     };
 
     if (!contentData.topic || !contentData.originalText) {
@@ -60,12 +59,12 @@ const AdminCreateContentPage = () => {
     }
 
     try {
-      await createContent(contentData);
-      toast.success('Content created successfully!');
-      navigate(`${basePath}/content`); // Navigate back to the list for the current role
+      const newContent = await createContent(contentData); // Backend returns the created content
+      toast.success(`Content "${newContent.topic.replace(/-/g,' ')}" created successfully!`);
+      navigate(`${basePath}/content/edit/${newContent._id}`); // Navigate to edit page of new content
     } catch (err) {
       const errMsg = err.response?.data?.error || 'Failed to create content.';
-      setError(errMsg); // Set form error for display
+      setError(errMsg); 
       toast.error(errMsg);
     } finally {
       setLoading(false);
@@ -74,10 +73,14 @@ const AdminCreateContentPage = () => {
 
   return (
     <div className="space-y-6">
-      <Link to={`${basePath}/content`} className="text-sm inline-block mb-2 hover:underline text-[var(--color-link)]">
-        ← Back to Content List
-      </Link>
-      <h1 className="text-2xl font-semibold">Create New Content</h1>
+        <div className="flex items-center gap-2 mb-2">
+          <Link to={`${basePath}/content`} className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors" title="Back to Content List">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-[var(--color-text-secondary)]">
+              <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.56l2.72 2.72a.75.75 0 1 1-1.06 1.06l-4-4a.75.75 0 0 1 0-1.06l4-4a.75.75 0 0 1 1.06 1.06L5.56 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+            </svg>
+          </Link>
+          <h1 className="text-2xl font-semibold">Create New Content</h1>
+        </div>
 
       <form onSubmit={handleSubmit} className="card max-w-2xl mx-auto p-6 md:p-8">
         {error && <ErrorAlert message={error} />}

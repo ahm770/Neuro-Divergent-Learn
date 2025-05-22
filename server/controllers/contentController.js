@@ -1,8 +1,9 @@
-// ===== File: /server/controllers/contentController.js =====
+// ===== File: /controllers/contentController.js =====
 const Content = require('../models/Content');
 const User = require('../models/User');
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
 const logAction = require('../utils/auditLogger'); // Import the logger
+const crypto = require('crypto'); // For hashing text in audit
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 let genAI;
@@ -43,7 +44,7 @@ const createContent = async (req, res) => {
     if (!topic || !originalText) {
       return res.status(400).json({ error: 'Topic and originalText are required.' });
     }
-    const topicSlug = topic.toLowerCase().trim().replace(/\s+/g, '-');
+    const topicSlug = topic.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, ''); // Sanitize slug
     const existingContent = await Content.findOne({ topic: topicSlug });
     if (existingContent) {
       return res.status(400).json({ error: `Content for topic "${topic}" already exists (slug: ${topicSlug}).` });
@@ -64,11 +65,18 @@ const createContent = async (req, res) => {
       'CREATE_CONTENT', 
       'Content', 
       newContent._id, 
-      { topic: newContent.topic, titleFromUser: topic }, // Log original title too if it differs from slug
+      { 
+        topicSlug: newContent.topic, 
+        titleFromUser: topic,
+        tags: newContent.tags,
+        charCount: originalText.length 
+      },
       req.ip
     );
 
-    const populatedContent = await Content.findById(newContent._id).populate('createdBy', 'name email');
+    const populatedContent = await Content.findById(newContent._id)
+                                     .populate('createdBy', 'name email')
+                                     .populate('lastUpdatedBy', 'name email');
     res.status(201).json(populatedContent);
   } catch (err) {
     console.error("Error creating content:", err.message, err.stack);
@@ -83,17 +91,18 @@ const getAllContent = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const query = {};
-    if (req.query.search) {
-      const searchRegex = new RegExp(req.query.search, 'i');
+    if (req.query.search && req.query.search.trim() !== '') {
+      const searchRegex = new RegExp(req.query.search.trim(), 'i');
       query.$or = [
-        { topic: searchRegex },
+        { topic: searchRegex }, // Searches the slug
+        { originalText: searchRegex },
         { tags: searchRegex }
       ];
     }
-    if (req.query.tag) {
-        query.tags = req.query.tag;
+    if (req.query.tag && req.query.tag.trim() !== '') {
+        query.tags = { $regex: new RegExp(`^${req.query.tag.trim()}$`, 'i') };
     }
-    if (req.query.creatorId) { // Filter by creator
+    if (req.query.creatorId) {
         query.createdBy = req.query.creatorId;
     }
 
@@ -111,7 +120,7 @@ const getAllContent = async (req, res) => {
       .sort(sortOptions)
       .skip(skip)
       .limit(limit)
-      .select('topic tags createdAt createdBy lastUpdatedBy updatedAt');
+      .select('topic tags originalText createdAt createdBy lastUpdatedBy updatedAt'); // Ensure originalText is selected for dashboard snippets
 
     const totalContents = await Content.countDocuments(query);
     const totalPages = Math.ceil(totalContents / limit);
@@ -155,35 +164,63 @@ const updateContent = async (req, res) => {
       return res.status(404).json({ error: 'Content not found.' });
     }
     
-    const oldValues = {
+    const oldValuesSummary = {
         topic: content.topic,
-        originalTextLength: content.originalText.length,
+        originalTextHash: crypto.createHash('md5').update(content.originalText || "").digest('hex'),
         tags: [...content.tags],
-        // Add more fields if needed for detailed audit
+        imageCount: content.media?.imageUrls?.length || 0,
+        videoCount: content.videoExplainers?.length || 0,
+        audioCount: content.audioNarrations?.length || 0,
     };
+    const changes = {};
 
-    if (topic) content.topic = topic.toLowerCase().trim().replace(/\s+/g, '-');
-    if (originalText) content.originalText = originalText;
-    if (tags !== undefined) content.tags = tags;
-    if (imageUrls !== undefined) content.media.imageUrls = imageUrls;
-    if (videoExplainers !== undefined) content.videoExplainers = videoExplainers;
-    if (audioNarrations !== undefined) content.audioNarrations = audioNarrations;
+    const newSlug = topic ? topic.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '') : content.topic;
+    if (topic && content.topic !== newSlug) {
+        changes.topic = { old: content.topic, new: newSlug };
+        content.topic = newSlug;
+    }
+    if (originalText && content.originalText !== originalText) {
+        changes.originalText = "modified"; // Just indicate change, don't log full text
+        content.originalText = originalText;
+    }
+    if (tags !== undefined && JSON.stringify(content.tags.slice().sort()) !== JSON.stringify(tags.slice().sort())) {
+        changes.tags = { old: content.tags, new: tags };
+        content.tags = tags;
+    }
+    if (imageUrls !== undefined && JSON.stringify(content.media.imageUrls.slice().sort()) !== JSON.stringify(imageUrls.slice().sort())) {
+        changes.imageUrls = "modified";
+        content.media.imageUrls = imageUrls;
+    }
+    if (videoExplainers !== undefined && JSON.stringify(content.videoExplainers) !== JSON.stringify(videoExplainers)) { // Simplistic comparison
+        changes.videoExplainers = "modified";
+        content.videoExplainers = videoExplainers;
+    }
+    if (audioNarrations !== undefined && JSON.stringify(content.audioNarrations) !== JSON.stringify(audioNarrations)) {
+        changes.audioNarrations = "modified";
+        content.audioNarrations = audioNarrations;
+    }
     
-    content.lastUpdatedBy = req.user._id;
+    if (Object.keys(changes).length > 0) {
+        content.lastUpdatedBy = req.user._id;
+    }
+    
     const updatedContent = await content.save();
 
-    await logAction(
-      req.user.id,
-      'UPDATE_CONTENT',
-      'Content',
-      updatedContent._id,
-      { 
-        topic: updatedContent.topic, 
-        fieldsUpdated: Object.keys(req.body), 
-        // oldValues: oldValues // Optionally log old values if diffing is needed
-      },
-      req.ip
-    );
+    if (Object.keys(changes).length > 0) {
+        await logAction(
+          req.user.id,
+          'UPDATE_CONTENT',
+          'Content',
+          updatedContent._id,
+          { 
+            topicSlug: updatedContent.topic, 
+            titleFromUser: topic, // User input title
+            changes: changes, // Log specific changes
+            // oldValuesSummary: oldValuesSummary // Optional: Log summary of old values
+          },
+          req.ip
+        );
+    }
 
     const populatedContent = await Content.findById(updatedContent._id)
                                     .populate('createdBy', 'name email')
@@ -202,15 +239,16 @@ const deleteContent = async (req, res) => {
     const content = await Content.findById(contentId);
     if (!content) { return res.status(404).json({ error: 'Content not found.' }); }
 
-    const deletedTopic = content.topic; // Capture before deletion for audit log
+    const deletedTopicSlug = content.topic; 
+    const deletedTitle = content.topic.replace(/-/g, ' '); // For audit log
     await content.deleteOne();
 
     await logAction(
       req.user.id,
       'DELETE_CONTENT',
       'Content',
-      contentId,
-      { topic: deletedTopic },
+      contentId, // Use the original ID as entityId
+      { topicSlug: deletedTopicSlug, title: deletedTitle },
       req.ip
     );
     res.json({ message: 'Content removed successfully.' });
@@ -283,7 +321,7 @@ const simplifyContent = async (req, res) => {
     console.log(`Generating new simplified version (Gemini) for: ${contentDoc.topic}, prompt level: "${promptLevelDescription}"`);
     const simplificationPrompt = `You are an expert tutor specialized in adapting complex educational text for neurodivergent learners. Your goal is to simplify the following text while preserving its core meaning and accuracy. Adapt your language to suit a '${promptLevelDescription}' reading level. Use clear, concise sentences, and break down complex ideas into smaller, digestible parts. Avoid jargon where possible, or explain it simply if essential. If relevant, use analogies or simple examples. Ensure the tone is encouraging and supportive. Do NOT add any preambles like "Okay, here's the simplified version". Directly provide the simplified text. Original Text:\n---\n${contentDoc.originalText}\n---\n\nSimplified Text (for ${promptLevelDescription} understanding):`;
     const safetySettings = [ { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, ];
-    const generationConfig = { temperature: 0.3, maxOutputTokens: 2000 }; // Adjusted for potentially longer simplified texts
+    const generationConfig = { temperature: 0.3, maxOutputTokens: 2000 }; 
     
     const result = await textModel.generateContent({ contents: [{ role: "user", parts: [{ text: simplificationPrompt }] }], generationConfig, safetySettings });
     const response = result.response;
@@ -298,7 +336,7 @@ const simplifyContent = async (req, res) => {
     }
     const simplifiedText = response.candidates[0].content.parts.map(part => part.text).join("").trim();
     contentDoc.simplifiedVersions.push({ level: cacheLevelKey, text: simplifiedText, createdAt: new Date() });
-    contentDoc.lastUpdatedBy = req.user._id; // Log who triggered the update
+    content.lastUpdatedBy = req.user._id;
     await contentDoc.save();
 
     await logAction(
@@ -383,7 +421,7 @@ const generateVisualMap = async (req, res) => {
 
     const newVisualMap = { format, data: mermaidData, createdAt: new Date(), notes: "AI-Generated (Gemini)" };
     contentDoc.visualMaps.push(newVisualMap);
-    contentDoc.lastUpdatedBy = req.user._id;
+    content.lastUpdatedBy = req.user._id;
     await contentDoc.save();
 
     await logAction(
@@ -406,22 +444,36 @@ const generateVisualMap = async (req, res) => {
 };
 
 const generateAudioNarration = async (req, res) => {
-    // Placeholder - Implement actual audio generation and storage if needed
-    // For now, it's more of a manual URL entry on admin edit page.
-    // If AI audio generation is implemented, log it similarly.
     const { contentId, textToNarrate } = req.body;
     if (!contentId || !textToNarrate) {
         return res.status(400).json({error: "Content ID and text are required."});
     }
-    // Example: AI call here, save URL
-    // const audioUrl = await someAIService.generateSpeech(textToNarrate);
-    // const content = await Content.findById(contentId);
-    // content.audioNarrations.push({ url: audioUrl, /* other fields */ });
-    // content.lastUpdatedBy = req.user._id;
-    // await content.save();
-    // await logAction(req.user.id, 'GENERATE_AUDIO_NARRATION', 'Content', contentId, {}, req.ip);
-
-    res.status(501).json({ error: "AI Audio narration generation not fully implemented. URLs can be added manually." });
+     const content = await Content.findById(contentId);
+     if (!content) {
+        return res.status(404).json({error: "Content not found."});
+     }
+    // Placeholder logic as actual AI generation is complex
+    // In a real scenario, you'd call a TTS service, get a URL, and save it.
+    const placeholderUrl = `https://example.com/audio/${contentId}-${Date.now()}.mp3`;
+    const newNarration = {
+        url: placeholderUrl,
+        language: 'en-US', // Or from user prefs/request
+        voice: 'default',
+        createdAt: new Date()
+    };
+    content.audioNarrations.push(newNarration);
+    content.lastUpdatedBy = req.user._id;
+    await content.save();
+    
+    await logAction(
+        req.user.id, 
+        'GENERATE_AUDIO_NARRATION', 
+        'Content', 
+        contentId, 
+        { topic: content.topic, url: placeholderUrl, source: "placeholder" }, 
+        req.ip
+    );
+    res.status(201).json({ message: "Audio narration URL placeholder created.", narration: newNarration });
 };
 const findVideoExplainers = async (req, res) => {
   res.status(501).json({ error: "Video explainer sourcing not implemented." });

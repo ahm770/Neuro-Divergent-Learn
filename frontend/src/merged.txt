@@ -2,8 +2,8 @@
 ===== File: /src/App.js =====
 // src/App.jsx
 import React, { useEffect } from 'react';
-import { Routes, Route, Link, BrowserRouter } from 'react-router-dom'; // BrowserRouter if not in index.js
-import { useAuth, AuthProvider } from './contexts/AuthContext'; // AuthProvider if not in index.js
+import { Routes, Route, Link, BrowserRouter } from 'react-router-dom';
+import { useAuth, AuthProvider } from './contexts/AuthContext';
 
 // Import Pages
 import LoginPage from './pages/LoginPage';
@@ -12,21 +12,27 @@ import DashboardPage from './pages/DashboardPage';
 import ContentPage from './pages/ContentPage';
 import HomePage from './pages/HomePage';
 import UserProfilePage from './pages/UserProfilePage';
+
+// Admin Pages
 import AdminRoute from './components/common/AdminRoute';
 import AdminDashboardPage from './pages/admin/AdminDashboardPage';
 import AdminContentListPage from './pages/admin/AdminContentListPage';
 import AdminCreateContentPage from './pages/admin/AdminCreateContentPage';
 import AdminEditContentPage from './pages/admin/AdminEditContentPage';
+import AdminUserManagementPage from './pages/admin/AdminUserManagementPage'; // New
+
+// Creator Pages & Components
+import CreatorRoute from './components/common/CreatorRoute'; // New
+import CreatorDashboardPage from './pages/creator/CreatorDashboardPage'; // New
 
 // Import Components
 import ProtectedRoute from './components/common/ProtectedRoute';
 import Navbar from './components/common/Navbar';
 import SimpleMermaidTest from './components/common/SimpleMermaidTest';
-// Import react-toastify
 import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css'; // Import default CSS
+import 'react-toastify/dist/ReactToastify.css';
 
-const App = () => { // Renamed from App to avoid conflict if AuthProvider is here
+const App = () => {
   const { user } = useAuth();
 
   useEffect(() => {
@@ -39,20 +45,11 @@ const App = () => { // Renamed from App to avoid conflict if AuthProvider is her
 
     if (user && user.preferences) {
       const { theme, fontSize, dyslexiaFontEnabled } = user.preferences;
-
-      if (theme === 'dark') {
-        rootEl.classList.add('dark');
-      } else if (theme === 'high-contrast') {
-        bodyEl.classList.add('theme-high-contrast');
-      } else {
-        bodyEl.classList.add('theme-light'); // Default
-      }
-
+      if (theme === 'dark') rootEl.classList.add('dark');
+      else if (theme === 'high-contrast') bodyEl.classList.add('theme-high-contrast');
+      else bodyEl.classList.add('theme-light');
       rootEl.classList.add(`font-size-${fontSize || 'medium'}`);
-
-      if (dyslexiaFontEnabled) {
-        bodyEl.classList.add('font-dyslexic');
-      }
+      if (dyslexiaFontEnabled) bodyEl.classList.add('font-dyslexic');
     } else {
       bodyEl.classList.add('theme-light');
       rootEl.classList.add('font-size-medium');
@@ -61,52 +58,53 @@ const App = () => { // Renamed from App to avoid conflict if AuthProvider is her
 
   return (
     <div className="min-h-screen flex flex-col">
-       <ToastContainer
-        position="bottom-right" // Or "top-right", "top-center", etc.
-        autoClose={5000} // Auto close after 5 seconds
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="colored" // Or "light", "dark" - "colored" adapts to type (success, error)
-      />
+       <ToastContainer position="bottom-right" autoClose={5000} hideProgressBar={false} newestOnTop={false} closeOnClick rtl={false} pauseOnFocusLoss draggable pauseOnHover theme="colored" />
       <Navbar />
       <main className="flex-grow container mx-auto px-4 py-8">
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          
           <Route element={<ProtectedRoute />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/content/:topic" element={<ContentPage />} />
             <Route path="/profile" element={<UserProfilePage />} />
           </Route>
+
+          {/* Admin Routes */}
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<AdminDashboardPage />} />
             <Route path="/admin/content" element={<AdminContentListPage />} />
             <Route path="/admin/content/create" element={<AdminCreateContentPage />} />
             <Route path="/admin/content/edit/:contentId" element={<AdminEditContentPage />} />
+            <Route path="/admin/users" element={<AdminUserManagementPage />} /> {/* New admin route */}
           </Route>
+
+          {/* Creator Routes */}
+          <Route element={<CreatorRoute />}>
+            <Route path="/creator/dashboard" element={<CreatorDashboardPage />} />
+            {/* Creators use the same components as Admins for content management for now */}
+            <Route path="/creator/content" element={<AdminContentListPage />} />
+            <Route path="/creator/content/create" element={<AdminCreateContentPage />} />
+            <Route path="/creator/content/edit/:contentId" element={<AdminEditContentPage />} />
+          </Route>
+
           <Route path="*" element={<div className="text-center py-10"><h2 className="text-2xl font-bold">404 Not Found</h2><Link to="/" className="button-primary mt-4 inline-block">Go Home</Link></div>} />
         </Routes>
       </main>
       <footer className="text-center p-4 mt-auto border-t border-[var(--color-border)] text-[var(--color-text-secondary)] text-sm">
         © {new Date().getFullYear()} Accessible Learning Portal.
-        {user && user.preferences && ( /* Debug info, remove for production */
+        {user && user.preferences && (
             <div className="text-xs opacity-70">
                 Theme: {user.preferences.theme}, Font: {user.preferences.fontSize}, Dyslexic: {user.preferences.dyslexiaFontEnabled ? 'On' : 'Off'}
             </div>
         )}
-        <SimpleMermaidTest />
+        
       </footer>
     </div>
   );
 }
-
- 
 
 export default App;
 
@@ -424,6 +422,33 @@ const AdminRoute = ({ children }) => {
 
 export default AdminRoute;
 
+===== File: /src/components/common/CreatorRoute.jsx =====
+// src/components/common/CreatorRoute.jsx
+import React from 'react';
+import { Navigate, Outlet } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+
+const CreatorRoute = ({ children }) => {
+  const { isAuthenticated, user, loading } = useAuth();
+
+  if (loading) {
+    return <div className="text-center p-10">Loading authentication...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role !== 'admin' && user?.role !== 'creator') {
+    // Redirect to dashboard if not admin or creator
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children ? children : <Outlet />;
+};
+
+export default CreatorRoute;
+
 ===== File: /src/components/common/MermaidDiagram.jsx =====
 // src/components/common/MermaidDiagram.jsx
 import React, { useEffect, useRef, useState, useCallback } from 'react';
@@ -597,13 +622,13 @@ export default MermaidDiagram;
 
 ===== File: /src/components/common/Navbar.jsx =====
 // src/components/common/Navbar.jsx
-import React from 'react'; // Removed useState, useEffect, useRef if using HeadlessUI fully
+import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Menu, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
 
-const UserIcon = () => ( /* ... same as before ... */
+const UserIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
       <path fillRule="evenodd" d="M18.685 19.097A9.723 9.723 0 0 0 21.75 12c0-5.385-4.365-9.75-9.75-9.75S2.25 6.615 2.25 12a9.723 9.723 0 0 0 3.065 7.097A9.716 9.716 0 0 0 12 21.75a9.716 9.716 0 0 0 6.685-2.653Zm-12.54-1.285A7.486 7.486 0 0 1 12 15a7.486 7.486 0 0 1 5.855 2.812A8.224 8.224 0 0 1 12 20.25a8.224 8.224 0 0 1-5.855-2.438ZM15.75 9a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" clipRule="evenodd" />
     </svg>
@@ -618,28 +643,26 @@ const Navbar = () => {
         navigate('/login');
     };
 
-    // Button styles for navbar items (example)
     const navLinkClass = "text-white hover:text-opacity-80 transition-opacity duration-150";
     const navButtonClass = "bg-white text-[var(--color-link)] hover:bg-opacity-90 dark:text-primary dark:hover:bg-slate-200 font-semibold py-1 px-3 rounded text-sm";
-    // High-contrast specific for signup button if needed, or rely on global button theming
-    const hcNavLinkClass = "body.theme-high-contrast & { text-[var(--color-hc-text)] }"; // This is pseudo-css
-    const hcNavButtonClass = "body.theme-high-contrast & { background-color: var(--color-hc-link); color: var(--color-hc-background); }";
-
 
     return (
         <nav className="bg-primary text-white dark:bg-slate-900 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:text-hc-text body-theme-high-contrast:border-b body-theme-high-contrast:border-hc-border shadow-md">
-             {/* The body-theme-high-contrast:... classes are illustrative; actual application happens via body class + CSS vars */}
             <div className="container mx-auto px-4 py-3 flex justify-between items-center">
                 <Link to="/" className={`text-xl font-bold ${navLinkClass}`}>
                     Accessible Learning
                 </Link>
                 <div className="space-x-2 sm:space-x-4 flex items-center">
                     {isAuthenticated && user?.role === 'admin' && (
-                        <Link to="/admin" className={navLinkClass}>Admin</Link>
+                        <Link to="/admin" className={navLinkClass}>Admin Panel</Link>
                     )}
+                    {isAuthenticated && user?.role === 'creator' && (
+                        <Link to="/creator/dashboard" className={navLinkClass}>Creator Studio</Link>
+                    )}
+
                     {isAuthenticated ? (
                         <>
-                            <Link to="/dashboard" className={navLinkClass}>Dashboard</Link>
+                            <Link to="/dashboard" className={navLinkClass}>My Dashboard</Link>
                             <Menu as="div" className="relative inline-block text-left">
                                 <div>
                                     <Menu.Button className={`inline-flex w-full justify-center items-center space-x-1 rounded-md px-1 py-1 sm:px-2 text-sm font-medium ${navLinkClass} focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-opacity-75`}>
@@ -663,6 +686,7 @@ const Navbar = () => {
                                              <div className="px-3 py-2">
                                                 <p className="text-xs text-[var(--color-text-secondary)]">Signed in as</p>
                                                 <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{user?.email}</p>
+                                                <p className="text-xs text-[var(--color-text-secondary)] capitalize">Role: {user?.role}</p>
                                             </div>
                                         </div>
                                         <div className="px-1 py-1">
@@ -1630,114 +1654,310 @@ export default UserProfilePage;
 
 ===== File: /src/pages/admin/AdminContentListPage.jsx =====
 // src/pages/admin/AdminContentListPage.jsx
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { getAllContentForAdmin, deleteContent } from '../../services/contentService';
-// Assuming useAuth is not strictly needed here if AdminRoute protects it, but good for consistency if used elsewhere.
-// import { useAuth } from '../../contexts/AuthContext';
+import React, { useEffect, useState, useCallback } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { getPublishedContentList, deleteContent } from '../../services/contentService';
+import { toast } from 'react-toastify';
 
 const LoadingMessage = () => <div className="p-4 text-center text-[var(--color-text-secondary)]">Loading content...</div>;
 const ErrorAlert = ({ message }) => (
-    <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700
-                   dark:bg-red-900/20 dark:border-red-700 dark:text-red-300
-                   body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link"
-    role="alert">
-        {message}
-    </div>
+    <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700 dark:bg-red-900/20 dark:border-red-700 dark:text-red-300 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link" role="alert">{message}</div>
 );
+
+const Pagination = ({ currentPage, totalPages, onPageChange, disabled }) => {
+  if (totalPages <= 1) return null;
+  const pageNumbers = [];
+  
+  // Logic for limited page numbers (e.g., first, last, current +/- 2)
+  const maxPagesToShow = 5;
+  let startPage, endPage;
+  if (totalPages <= maxPagesToShow) {
+    startPage = 1;
+    endPage = totalPages;
+  } else {
+    if (currentPage <= Math.ceil(maxPagesToShow / 2)) {
+      startPage = 1;
+      endPage = maxPagesToShow;
+    } else if (currentPage + Math.floor(maxPagesToShow / 2) >= totalPages) {
+      startPage = totalPages - maxPagesToShow + 1;
+      endPage = totalPages;
+    } else {
+      startPage = currentPage - Math.floor(maxPagesToShow / 2);
+      endPage = currentPage + Math.floor(maxPagesToShow / 2);
+    }
+  }
+
+  for (let i = startPage; i <= endPage; i++) {
+    pageNumbers.push(i);
+  }
+
+  return (
+    <nav aria-label="Content pagination" className="mt-6 flex justify-center">
+      <ul className="inline-flex items-center -space-x-px">
+        <li>
+          <button
+            onClick={() => onPageChange(1)}
+            disabled={disabled || currentPage === 1}
+            className="px-3 py-2 ml-0 leading-tight text-gray-500 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
+          >
+            First
+          </button>
+        </li>
+        <li>
+          <button
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={disabled || currentPage === 1}
+            className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
+          >
+            Previous
+          </button>
+        </li>
+        {startPage > 1 && (
+            <li>
+                <span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span>
+            </li>
+        )}
+        {pageNumbers.map(number => (
+          <li key={number}>
+            <button
+              onClick={() => onPageChange(number)}
+              disabled={disabled}
+              className={`px-3 py-2 leading-tight border ${ currentPage === number 
+                ? 'text-primary-dark bg-primary/20 border-primary-dark dark:bg-primary-light/30 dark:text-white dark:border-primary-light font-semibold' 
+                : 'text-gray-500 bg-white border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white'}`}
+            >
+              {number}
+            </button>
+          </li>
+        ))}
+        {endPage < totalPages && (
+             <li>
+                <span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span>
+            </li>
+        )}
+        <li>
+          <button
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={disabled || currentPage === totalPages}
+            className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
+          >
+            Next
+          </button>
+        </li>
+         <li>
+          <button
+            onClick={() => onPageChange(totalPages)}
+            disabled={disabled || currentPage === totalPages}
+            className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 rounded-r-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
+          >
+            Last
+          </button>
+        </li>
+      </ul>
+    </nav>
+  );
+};
 
 
 const AdminContentListPage = () => {
-  const [contents, setContents] = useState([]);
+  const [contentData, setContentData] = useState({ contents: [], currentPage: 1, totalPages: 1, totalContents: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  // const { token } = useAuth(); // Only if directly making calls that might not pass through AdminRoute's checks
+  
+  const location = useLocation();
+  const navigate = useNavigate();
+  
+  const parseQueryParams = () => {
+    const params = new URLSearchParams(location.search);
+    return {
+      search: params.get('search') || '',
+      tag: params.get('tag') || '',
+      creatorId: params.get('creatorId') || '', // Example: if you add creator filter
+      sortBy: params.get('sortBy') || 'createdAt:desc',
+      page: parseInt(params.get('page')) || 1,
+      limit: parseInt(params.get('limit')) || 10,
+    };
+  };
 
-  const fetchContents = async () => {
+  const [activeFilters, setActiveFilters] = useState(parseQueryParams());
+
+
+  const fetchContents = useCallback(async () => {
     setLoading(true);
     setError(null);
+    
+    const paramsToFetch = { ...activeFilters };
+    // Remove empty filter values before sending to API
+    Object.keys(paramsToFetch).forEach(key => (paramsToFetch[key] === '' || paramsToFetch[key] === null) && delete paramsToFetch[key]);
+
     try {
-      const data = await getAllContentForAdmin();
-      setContents(data);
+      const data = await getPublishedContentList(paramsToFetch);
+      setContentData(data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to fetch content list.');
       console.error("Fetch content list error:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeFilters]); // Depend on the single state object for filters/pagination
 
   useEffect(() => {
+    // Update URL when activeFilters change
+    const newSearch = new URLSearchParams(activeFilters).toString();
+    navigate(`${location.pathname}?${newSearch}`, { replace: true });
     fetchContents();
-  }, []); // Fetch on mount
+  }, [activeFilters, fetchContents, navigate, location.pathname]);
+
+
+  const handleFilterChange = (e) => {
+    const { name, value } = e.target;
+    setActiveFilters(prev => ({ ...prev, [name]: value, page: 1 })); // Reset page on filter change
+  };
+
+  const handleSortChange = (e) => {
+    setActiveFilters(prev => ({ ...prev, sortBy: e.target.value, page: 1 }));
+  };
+  
+  const handlePageChange = (pageNumber) => {
+    if (pageNumber >= 1 && pageNumber <= contentData.totalPages) {
+      setActiveFilters(prev => ({ ...prev, page: pageNumber }));
+    }
+  };
+
+  const handleLimitChange = (e) => {
+    setActiveFilters(prev => ({ ...prev, limit: parseInt(e.target.value), page: 1 }));
+  }
 
   const handleDelete = async (contentId, topic) => {
     if (window.confirm(`Are you sure you want to delete the topic "${topic}"? This action cannot be undone.`)) {
       try {
         await deleteContent(contentId);
-        setContents(prevContents => prevContents.filter(c => c._id !== contentId));
-        // Consider a more subtle success message/toast notification
-        alert(`Topic "${topic}" deleted successfully.`);
+        toast.success(`Topic "${topic}" deleted successfully.`);
+        // Re-fetch content, considering current page might become invalid if last item deleted
+        if (contentData.contents.length === 1 && activeFilters.page > 1) {
+            setActiveFilters(prev => ({ ...prev, page: prev.page - 1 }));
+        } else {
+            fetchContents(); 
+        }
       } catch (err) {
-        setError(err.response?.data?.error || `Failed to delete topic "${topic}".`);
-        console.error("Delete content error:", err);
+        const deleteError = err.response?.data?.error || `Failed to delete topic "${topic}".`;
+        setError(deleteError); // Still useful for a persistent error message
+        toast.error(deleteError);
       }
     }
   };
 
-  if (loading) return <LoadingMessage />;
+  const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
+
+  if (loading && contentData.contents.length === 0 && activeFilters.page === 1) return <LoadingMessage />;
 
   return (
-    <div className="space-y-6"> {/* Add consistent spacing */}
+    <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1>Manage Content</h1> {/* Uses global H1 style */}
-        <Link
-          to="/admin/content/create"
-          className="button-primary text-sm whitespace-nowrap" // Using generic button class
-        >
+        <h1 className="text-2xl font-semibold">Manage Content</h1>
+        <Link to={`${basePath}/content/create`} className="button-primary text-sm whitespace-nowrap">
           Create New Content
         </Link>
       </div>
 
       {error && <ErrorAlert message={error} />}
 
-      {contents.length === 0 && !loading && (
-        <div className="card text-center py-8"> {/* Using .card class */}
-            <p className="text-[var(--color-text-secondary)]">No content found. Get started by creating some!</p>
+      <div className="card p-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label htmlFor="search-content" className="form-label-default">Search Topic/Tag</label>
+              <input
+                type="search" name="search" id="search-content"
+                placeholder="Enter keyword..."
+                className="form-input-default"
+                value={activeFilters.search}
+                onChange={handleFilterChange}
+              />
+            </div>
+            <div>
+              <label htmlFor="tag-filter" className="form-label-default">Filter by Specific Tag</label>
+              <input
+                type="text" name="tag" id="tag-filter"
+                placeholder="Enter exact tag..."
+                className="form-input-default"
+                value={activeFilters.tag}
+                onChange={handleFilterChange}
+              />
+            </div>
+            {/* Add Creator Filter if needed by fetching list of creators */}
+            {/* <div>
+                <label htmlFor="creator-filter" className="form-label-default">Filter by Creator</label>
+                <select name="creatorId" id="creator-filter" value={activeFilters.creatorId} onChange={handleFilterChange} className="form-input-default">
+                    <option value="">All Creators</option>
+                    {/* Populate with creators */}
+                {/* </select>
+            </div> */}
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="sort-by" className="form-label-default">Sort By</label>
+              <select name="sortBy" id="sort-by" value={activeFilters.sortBy} onChange={handleSortChange} className="form-input-default">
+                <option value="createdAt:desc">Created Date (Newest)</option>
+                <option value="createdAt:asc">Created Date (Oldest)</option>
+                <option value="topic:asc">Topic (A-Z)</option>
+                <option value="topic:desc">Topic (Z-A)</option>
+                <option value="updatedAt:desc">Last Updated (Newest)</option>
+                <option value="updatedAt:asc">Last Updated (Oldest)</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="limit-select" className="form-label-default">Items per Page</label>
+              <select id="limit-select" name="limit" value={activeFilters.limit} onChange={handleLimitChange} className="form-input-default !w-auto">
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="50">50</option>
+              </select>
+            </div>
+        </div>
+      </div>
+
+      {loading && <div className="p-4 text-center text-sm text-[var(--color-text-secondary)] animate-pulse">Updating list...</div>}
+
+      {!loading && contentData.contents.length === 0 && (
+        <div className="card text-center py-8">
+            <p className="text-[var(--color-text-secondary)]">
+              {activeFilters.search || activeFilters.tag ? `No content matches your criteria.` : "No content found. Get started by creating some!"}
+            </p>
         </div>
       )}
 
-      {contents.length > 0 && (
-        <div className="card overflow-x-auto p-0 md:p-0"> {/* Remove padding for table to fit edges */}
+      {contentData.contents.length > 0 && (
+        <div className="card overflow-x-auto p-0 md:p-0">
           <table className="min-w-full divide-y divide-[var(--color-border)]">
-            <thead className="bg-gray-100 dark:bg-slate-800 body-theme-high-contrast:bg-gray-900"> {/* Slightly different bg for thead */}
+            <thead className="bg-gray-100 dark:bg-slate-800 body-theme-high-contrast:bg-gray-900">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Topic</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Tags</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Created At</th>
-                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Actions</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Topic</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Tags</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Created By</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Created</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Updated</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-border)]">
-              {contents.map((content) => (
-                <tr key={content._id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 body-theme-high-contrast:hover:bg-gray-700"> {/* Hover effect */}
+              {contentData.contents.map((content) => (
+                <tr key={content._id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 body-theme-high-contrast:hover:bg-gray-700 transition-colors duration-150">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-[var(--color-text-primary)] capitalize">{content.topic?.replace('-', ' ')}</div>
+                    <div className="text-sm font-medium text-[var(--color-text-primary)] capitalize">{content.topic?.replace(/-/g, ' ')}</div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-[var(--color-text-secondary)]">{content.tags?.join(', ') || 'N/A'}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-[var(--color-text-secondary)]">{new Date(content.createdAt).toLocaleDateString()}</div>
-                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--color-text-secondary)] max-w-xs truncate" title={content.tags?.join(', ')}>{content.tags?.join(', ') || 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--color-text-secondary)]">{content.createdBy?.name || content.createdBy?.email || 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--color-text-secondary)]">{new Date(content.createdAt).toLocaleDateString()}</td>
+                   <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--color-text-secondary)]">
+                    {content.lastUpdatedBy ? `${content.lastUpdatedBy.name || content.lastUpdatedBy.email} on ` : ''}
+                    {new Date(content.updatedAt).toLocaleDateString()}
+                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-3">
-                    <Link to={`/admin/content/edit/${content._id}`} className="text-primary dark:text-primary-light body-theme-high-contrast:text-hc-link hover:underline">
+                    <Link to={`${basePath}/content/edit/${content._id}`} className="text-primary dark:text-primary-light body-theme-high-contrast:text-hc-link hover:underline">
                       Edit
                     </Link>
-                    <button
-                      onClick={() => handleDelete(content._id, content.topic)}
-                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 body-theme-high-contrast:text-red-400 body-theme-high-contrast:hover:text-red-300 hover:underline"
-                    >
+                    <button onClick={() => handleDelete(content._id, content.topic)} className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 body-theme-high-contrast:text-red-400 body-theme-high-contrast:hover:text-red-300 hover:underline">
                       Delete
                     </button>
                   </td>
@@ -1747,6 +1967,15 @@ const AdminContentListPage = () => {
           </table>
         </div>
       )}
+      <Pagination 
+        currentPage={activeFilters.page} 
+        totalPages={contentData.totalPages} 
+        onPageChange={handlePageChange} 
+        disabled={loading}
+      />
+       <p className="text-sm text-center text-[var(--color-text-secondary)] mt-2">
+        Showing {contentData.contents.length} of {contentData.totalContents} total entries.
+      </p>
     </div>
   );
 };
@@ -1758,10 +1987,11 @@ export default AdminContentListPage;
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { createContent } from '../../services/contentService';
-import TagInput from '../../components/admin/TagInput'; // Import TagInput
-import DynamicUrlInput from '../../components/admin/DynamicUrlInput'; // Import DynamicUrlInput
+import TagInput from '../../components/admin/TagInput';
+import DynamicUrlInput from '../../components/admin/DynamicUrlInput';
+import { toast } from 'react-toastify';
 
-// FormField component (can be kept here or moved to a common components folder if not already)
+
 const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder, name, rows = 3 }) => (
   <div className="form-field-default">
     <label htmlFor={id || name} className="form-label-default">{label}{required && <span className="text-red-500 ml-1">*</span>}</label>
@@ -1769,22 +1999,23 @@ const FormField = ({ id, label, type = 'text', value, onChange, required = false
     ) : ( <input type={type} id={id || name} name={name || id} value={value} onChange={onChange} required={required} placeholder={placeholder} className="form-input-default"/> )}
   </div>
 );
-const ErrorAlert = ({ message }) => ( /* ... same as before ... */
+const ErrorAlert = ({ message }) => (
     <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700 dark:bg-red-900/20 dark:border-red-700 dark:text-red-300 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link" role="alert">{message}</div>
 );
 
 const AdminCreateContentPage = () => {
   const [formData, setFormData] = useState({
-    topic: '',
+    topic: '', // This will be the human-readable title, slug generated on backend
     originalText: '',
-    // tags and imageUrls will be managed by their respective components
   });
-  const [tags, setTags] = useState([]); // State for tags
-  const [imageUrls, setImageUrls] = useState([]); // State for image URLs
+  const [tags, setTags] = useState([]);
+  const [imageUrls, setImageUrls] = useState([]);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(null); // For form-level persistent errors
   const navigate = useNavigate();
+  const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
+
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -1794,29 +2025,33 @@ const AdminCreateContentPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(null);
+    setError(null); // Clear previous form error
+    // toast.dismiss(); // Clear existing toasts
 
     const contentData = {
       ...formData,
-      topic: formData.topic.trim(),
-      tags: tags, // Use the state variable
-      imageUrls: imageUrls, // Use the state variable
-      videoExplainers: [],
-      audioNarrations: [],
+      topic: formData.topic.trim(), // Send human-readable title
+      tags: tags,
+      imageUrls: imageUrls.filter(url => url && url.trim() !== ''), // Filter out empty strings
+      videoExplainers: [], // Initialize as empty, can be added in edit
+      audioNarrations: [], // Initialize as empty, can be added in edit
     };
 
     if (!contentData.topic || !contentData.originalText) {
-        setError("Topic and Original Text are required.");
+        setError("Topic Title and Original Text are required.");
+        toast.error("Topic Title and Original Text are required.");
         setLoading(false);
         return;
     }
 
     try {
       await createContent(contentData);
-      alert('Content created successfully!');
-      navigate('/admin/content');
+      toast.success('Content created successfully!');
+      navigate(`${basePath}/content`); // Navigate back to the list for the current role
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to create content.');
+      const errMsg = err.response?.data?.error || 'Failed to create content.';
+      setError(errMsg); // Set form error for display
+      toast.error(errMsg);
     } finally {
       setLoading(false);
     }
@@ -1824,25 +2059,27 @@ const AdminCreateContentPage = () => {
 
   return (
     <div className="space-y-6">
-      <Link to="/admin/content" className="text-sm inline-block mb-2">← Back to Content List</Link>
-      <h1>Create New Content</h1>
+      <Link to={`${basePath}/content`} className="text-sm inline-block mb-2 hover:underline text-[var(--color-link)]">
+        ← Back to Content List
+      </Link>
+      <h1 className="text-2xl font-semibold">Create New Content</h1>
 
       <form onSubmit={handleSubmit} className="card max-w-2xl mx-auto p-6 md:p-8">
         {error && <ErrorAlert message={error} />}
 
-        <FormField name="topic" label="Topic Title" value={formData.topic} onChange={handleChange} required placeholder="e.g., Photosynthesis Basics"/>
+        <FormField name="topic" label="Topic Title (human-readable)" value={formData.topic} onChange={handleChange} required placeholder="e.g., Photosynthesis Basics"/>
         <FormField name="originalText" label="Original Content Text" value={formData.originalText} onChange={handleChange} textarea rows="10" required placeholder="Enter the full educational text here..."/>
         
         <TagInput
           initialTags={tags}
-          onChange={setTags} // Pass the setter function
+          onChange={setTags}
           label="Tags"
           placeholder="Add relevant tags"
         />
 
         <DynamicUrlInput
           initialUrls={imageUrls}
-          onChange={setImageUrls} // Pass the setter function
+          onChange={setImageUrls}
           label="Image URLs"
           placeholder="https://example.com/image.jpg"
         />
@@ -1865,10 +2102,9 @@ export default AdminCreateContentPage;
 // src/pages/admin/AdminDashboardPage.jsx
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext'; // To greet the admin
+import { useAuth } from '../../contexts/AuthContext';
 
-// Example Icons (using simple text, replace with actual icon components if you have them)
-const ContentIcon = () => <span className="text-2xl mr-2">📚</span>; // Simple emoji icon
+const ContentIcon = () => <span className="text-2xl mr-2">📚</span>;
 const UsersIcon = () => <span className="text-2xl mr-2">👥</span>;
 const SettingsIcon = () => <span className="text-2xl mr-2">⚙️</span>;
 const AnalyticsIcon = () => <span className="text-2xl mr-2">📊</span>;
@@ -1877,102 +2113,66 @@ const AnalyticsIcon = () => <span className="text-2xl mr-2">📊</span>;
 const AdminDashboardPage = () => {
   const { user } = useAuth();
 
-  // Placeholder data - in a real app, you might fetch some stats here
-  const stats = {
-    totalContent: 15, // Example: fetch from an API endpoint
-    totalUsers: 120,  // Example
-    pendingApprovals: 0 // Example
-  };
-
   return (
     <div className="container mx-auto p-4 md:p-6">
-      <h1 className="text-3xl font-bold text-primary mb-4">Admin Dashboard</h1>
-      <p className="mb-8 text-lg text-gray-700">
+      <h1>Admin Dashboard</h1>
+      <p className="mb-8 text-lg text-[var(--color-text-secondary)]">
         Welcome back, <span className="font-semibold">{user?.name || user?.email || 'Admin'}</span>!
       </p>
 
-      {/* Quick Stats Section (Optional - requires backend data) */}
-      {/*
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h3 className="text-xl font-semibold text-gray-700 mb-2">Total Content Topics</h3>
-          <p className="text-3xl font-bold text-primary">{stats.totalContent}</p>
-        </div>
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h3 className="text-xl font-semibold text-gray-700 mb-2">Registered Users</h3>
-          <p className="text-3xl font-bold text-primary">{stats.totalUsers}</p>
-        </div>
-        {stats.pendingApprovals > 0 && (
-          <div className="bg-orange-100 p-6 rounded-lg shadow-md">
-            <h3 className="text-xl font-semibold text-orange-700 mb-2">Pending Approvals</h3>
-            <p className="text-3xl font-bold text-orange-600">{stats.pendingApprovals}</p>
-          </div>
-        )}
-      </div>
-      */}
-
-      <h2 className="text-2xl font-semibold text-gray-800 mb-6">Management Sections</h2>
+      <h2 className="text-2xl font-semibold text-[var(--color-text-primary)] mb-6">Management Sections</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Manage Content Card */}
         <Link
           to="/admin/content"
-          className="block p-6 bg-white rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-200 ease-in-out transform hover:-translate-y-1"
+          className="card hover:shadow-lg transition-shadow"
         >
           <div className="flex items-center mb-3">
             <ContentIcon />
-            <h3 className="text-xl font-semibold text-gray-700">Manage Content</h3>
+            <h3 className="text-xl font-semibold text-[var(--color-text-primary)]">Manage Content</h3>
           </div>
-          <p className="text-gray-600 text-sm">
+          <p className="text-[var(--color-text-secondary)] text-sm">
             Create, edit, and delete learning topics and their associated materials.
           </p>
         </Link>
 
-        {/* Manage Users Card (Future Feature) */}
-        <div
-          // to="/admin/users" // Uncomment when implemented
-          className="block p-6 bg-gray-100 rounded-lg shadow-md cursor-not-allowed opacity-60"
-          title="User management coming soon"
+        <Link
+          to="/admin/users"
+          className="card hover:shadow-lg transition-shadow"
         >
           <div className="flex items-center mb-3">
             <UsersIcon />
-            <h3 className="text-xl font-semibold text-gray-500">Manage Users</h3>
+            <h3 className="text-xl font-semibold text-[var(--color-text-primary)]">Manage Users</h3>
           </div>
-          <p className="text-gray-500 text-sm">
-            View and manage user accounts. (Coming Soon)
+          <p className="text-[var(--color-text-secondary)] text-sm">
+            View user accounts, change roles, and manage platform access.
           </p>
-        </div>
+        </Link>
 
-        {/* Platform Settings Card (Future Feature) */}
         <div
-          // to="/admin/settings" // Uncomment when implemented
-          className="block p-6 bg-gray-100 rounded-lg shadow-md cursor-not-allowed opacity-60"
+          className="card opacity-60 cursor-not-allowed"
           title="Platform settings coming soon"
         >
           <div className="flex items-center mb-3">
             <SettingsIcon />
-            <h3 className="text-xl font-semibold text-gray-500">Platform Settings</h3>
+            <h3 className="text-xl font-semibold text-gray-500 dark:text-slate-400">Platform Settings</h3>
           </div>
-          <p className="text-gray-500 text-sm">
+          <p className="text-gray-500 dark:text-slate-400 text-sm">
             Configure global settings for the learning portal. (Coming Soon)
           </p>
         </div>
 
-        {/* Analytics/Reports Card (Future Feature) */}
         <div
-          // to="/admin/analytics" // Uncomment when implemented
-          className="block p-6 bg-gray-100 rounded-lg shadow-md cursor-not-allowed opacity-60"
+          className="card opacity-60 cursor-not-allowed"
           title="Analytics coming soon"
         >
           <div className="flex items-center mb-3">
             <AnalyticsIcon />
-            <h3 className="text-xl font-semibold text-gray-500">Analytics & Reports</h3>
+            <h3 className="text-xl font-semibold text-gray-500 dark:text-slate-400">Analytics & Reports</h3>
           </div>
-          <p className="text-gray-500 text-sm">
+          <p className="text-gray-500 dark:text-slate-400 text-sm">
             View usage statistics and learning progress insights. (Coming Soon)
           </p>
         </div>
-
-        {/* Add more admin sections as cards here */}
       </div>
     </div>
   );
@@ -1983,14 +2183,13 @@ export default AdminDashboardPage;
 ===== File: /src/pages/admin/AdminEditContentPage.jsx =====
 // src/pages/admin/AdminEditContentPage.jsx
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { getContentByIdForAdmin, updateContent } from '../../services/contentService';
+import { useParams, Link, useNavigate } from 'react-router-dom'; // Added useNavigate
+import { getContentByIdForEditing, updateContent } from '../../services/contentService'; 
 import MermaidDiagram from '../../components/common/MermaidDiagram';
 import TagInput from '../../components/admin/TagInput';
 import DynamicUrlInput from '../../components/admin/DynamicUrlInput';
-import { toast } from 'react-toastify'; // Import react-toastify
+import { toast } from 'react-toastify';
 
-// Reusable FormField component
 const FormField = ({ id, label, type = 'text', value, onChange, required = false, textarea = false, placeholder, disabled = false, name, rows = 3, children }) => (
   <div className="form-field-default">
     <label htmlFor={id || name} className="form-label-default">{label}{required && !disabled && <span className="text-red-500 ml-1">*</span>}</label>
@@ -2006,20 +2205,20 @@ const FormField = ({ id, label, type = 'text', value, onChange, required = false
 
 const LoadingMessage = () => <div className="p-6 text-center text-[var(--color-text-secondary)]">Loading content details...</div>;
 
-// ErrorAlert for initial page load failure if needed, but toast primarily handles errors
-const PageLoadError = ({ message }) => (
+const PageLoadError = ({ message, basePath }) => ( // Added basePath
     <div className="p-6 text-center card my-4">
         <p className="text-red-600 dark:text-red-400 body-theme-high-contrast:text-hc-link mb-4">{message}</p>
-        <Link to="/admin/content" className="button-secondary text-sm">Go back to list</Link>
+        <Link to={`${basePath}/content`} className="button-secondary text-sm">Go back to list</Link>
     </div>
 );
 
 
 const AdminEditContentPage = () => {
   const { contentId } = useParams();
-
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
-    topic: '',
+    topicSlug: '', // Store the slug separately from display title
+    displayTopic: '', // For the input field
     originalText: '',
     videoExplainers: [],
     audioNarrations: [],
@@ -2027,21 +2226,22 @@ const AdminEditContentPage = () => {
     visualMaps: [],
   });
   const [tags, setTags] = useState([]);
-  const [imageUrls, setImageUrls] = useState([]); // For DynamicUrlInput (editable)
-  const [initialImageGallery, setInitialImageGallery] = useState([]); // For gallery preview of saved images
+  const [imageUrls, setImageUrls] = useState([]);
+  const [initialImageGallery, setInitialImageGallery] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  // Error state is mostly handled by toasts, but can be used for critical page load failures
+  
+  const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
 
   useEffect(() => {
     const fetchContent = async () => {
       setLoading(true);
-      // toast.dismiss(); // Optional: clear any existing toasts on new fetch
       try {
-        const data = await getContentByIdForAdmin(contentId);
+        const data = await getContentByIdForEditing(contentId);
         setFormData({
-          topic: data.topic || '',
+          topicSlug: data.topic || '', // This is the slug from DB
+          displayTopic: data.topic ? data.topic.replace(/-/g, ' ') : '', // Convert slug to human-readable for display
           originalText: data.originalText || '',
           videoExplainers: data.videoExplainers || [],
           audioNarrations: data.audioNarrations || [],
@@ -2055,9 +2255,6 @@ const AdminEditContentPage = () => {
       } catch (err) {
         const fetchErrorMsg = err.response?.data?.error || `Failed to fetch content (ID: ${contentId}).`;
         toast.error(fetchErrorMsg);
-        console.error("Fetch content for edit error:", err);
-        // If fetch fails catastrophically, we might still want to set a page-level error
-        // For now, toast is primary.
       } finally {
         setLoading(false);
       }
@@ -2067,18 +2264,25 @@ const AdminEditContentPage = () => {
     } else {
         toast.error("Content ID is missing.");
         setLoading(false);
+        navigate(`${basePath}/content`);
     }
-  }, [contentId]);
+  }, [contentId, basePath, navigate]);
+
+  const handleDisplayTopicChange = (e) => {
+    const newDisplayTopic = e.target.value;
+    setFormData(prev => ({ 
+        ...prev, 
+        displayTopic: newDisplayTopic,
+        // topicSlug will be updated on submit based on displayTopic, or backend handles slug generation
+    }));
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
-
-  const handleArrayChange = (setterFunc, fieldData) => {
-    setterFunc(fieldData);
-  };
-
+  
+  const handleArrayChange = (setterFunc, fieldData) => setterFunc(fieldData);
   const handleVideoChange = (index, field, value) => handleArrayChange(setFormData, prev => ({ ...prev, videoExplainers: prev.videoExplainers.map((video, i) => i === index ? { ...video, [field]: value } : video)}));
   const handleAddVideoField = () => handleArrayChange(setFormData, prev => ({ ...prev, videoExplainers: [...prev.videoExplainers, { source: 'youtube', url: '', title: '', description: '' }]}));
   const handleRemoveVideoField = (index) => handleArrayChange(setFormData, prev => ({ ...prev, videoExplainers: prev.videoExplainers.filter((_, i) => i !== index)}));
@@ -2088,14 +2292,16 @@ const AdminEditContentPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.topic || !formData.originalText) {
+    if (!formData.displayTopic || !formData.originalText) {
         toast.error("Topic Title and Original Text are required.");
         return;
     }
     setSaving(true);
 
     const contentDataToUpdate = {
-      topic: formData.topic,
+      // Send the human-readable title; backend will re-slugify it.
+      // This allows users to change the human-readable title naturally.
+      topic: formData.displayTopic.trim(), 
       originalText: formData.originalText,
       tags: tags,
       imageUrls: imageUrls.filter(url => url && url.trim() !== ''),
@@ -2106,11 +2312,11 @@ const AdminEditContentPage = () => {
     try {
       const updatedContent = await updateContent(contentId, contentDataToUpdate);
       toast.success('Content updated successfully!');
-      
       if (updatedContent) {
         setFormData(prev => ({
             ...prev,
-            topic: updatedContent.topic || prev.topic,
+            topicSlug: updatedContent.topic || prev.topicSlug,
+            displayTopic: updatedContent.topic ? updatedContent.topic.replace(/-/g, ' ') : prev.displayTopic,
             originalText: updatedContent.originalText || prev.originalText,
             videoExplainers: updatedContent.videoExplainers || [],
             audioNarrations: updatedContent.audioNarrations || [],
@@ -2125,36 +2331,35 @@ const AdminEditContentPage = () => {
     } catch (err) {
       const updateErrorMsg = err.response?.data?.error || 'Failed to update content.';
       toast.error(updateErrorMsg);
-      console.error("Update content error:", err);
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading && !formData.topic) return <LoadingMessage />;
-  if (!loading && !formData.topic && contentId) {
-      return <PageLoadError message={`Failed to load content with ID: ${contentId}. It might have been deleted or an error occurred.`} />
+  if (loading && !formData.displayTopic) return <LoadingMessage />;
+  if (!loading && !formData.displayTopic && contentId) {
+      return <PageLoadError message={`Failed to load content with ID: ${contentId}. It might have been deleted or an error occurred.`} basePath={basePath} />
   }
 
   return (
     <div className="space-y-6 pb-12">
-      {/* ToastContainer is in App.js */}
       <div className="flex justify-between items-center mb-2">
-        <Link to="/admin/content" className="text-sm">← Back to Content List</Link>
+        <Link to={`${basePath}/content`} className="text-sm hover:underline text-[var(--color-link)]">
+            ← Back to Content List
+        </Link>
       </div>
-      <h1>Edit Content: <span className="capitalize text-[var(--color-link)]">{formData.topic.replace(/-/g,' ') || "Loading..."}</span></h1>
+      <h1 className="text-2xl font-semibold">Edit Content: <span className="capitalize text-[var(--color-link)]">{formData.displayTopic || "Loading..."}</span></h1>
 
       <form onSubmit={handleSubmit} className="card max-w-3xl mx-auto p-6 md:p-8">
         <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
             <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Core Content</legend>
             <FormField 
-              name="topicDisplay"
-              label="Topic Title" 
-              value={formData.topic.replace(/-/g,' ')}
-              onChange={(e) => {
-                  setFormData(prev => ({...prev, topic: e.target.value.toLowerCase().trim().replace(/\s+/g, '-')}));
-              }} 
+              name="displayTopic"
+              label="Topic Title (human-readable)" 
+              value={formData.displayTopic} // Use displayTopic for input
+              onChange={handleDisplayTopicChange} // Use specific handler
               required 
+              placeholder="e.g. Photosynthesis For Beginners"
             />
             <FormField name="originalText" label="Original Content Text" value={formData.originalText} onChange={handleChange} textarea rows="10" required />
             <TagInput 
@@ -2162,14 +2367,13 @@ const AdminEditContentPage = () => {
               onChange={(newTags) => handleArrayChange(setTags, newTags)} 
               label="Tags"
             />
-            <DynamicUrlInput // This component shows previews for URLs being edited
+            <DynamicUrlInput
               initialUrls={imageUrls} 
               onChange={(newUrls) => handleArrayChange(setImageUrls, newUrls)} 
               label="Image URLs (Editable)" 
             />
         </fieldset>
 
-        {/* Gallery Preview of Saved Images */}
         {initialImageGallery && initialImageGallery.length > 0 && (
             <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
                 <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Current Saved Images</legend>
@@ -2189,12 +2393,11 @@ const AdminEditContentPage = () => {
                     ))}
                 </div>
                 <p className="text-xs text-[var(--color-text-secondary)] mt-2">
-                    To change images, edit the "Image URLs (Editable)" section above and save.
+                    To change images, edit the "Image URLs (Editable)" section above and save. New images will appear here after saving.
                 </p>
             </fieldset>
         )}
 
-        {/* Video Explainers Fieldset */}
         <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
           <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Video Explainers</legend>
            {formData.videoExplainers.map((video, index) => (
@@ -2215,7 +2418,6 @@ const AdminEditContentPage = () => {
           <button type="button" onClick={handleAddVideoField} className="button-secondary text-sm">+ Add Video Explainer</button>
         </fieldset>
 
-        {/* Audio Narrations Fieldset */}
         <fieldset className="border border-[var(--color-border)] p-4 rounded-md mb-6">
             <legend className="text-lg font-semibold text-[var(--color-text-secondary)] px-2">Audio Narrations (Manual URLs)</legend>
             {formData.audioNarrations.map((audio, index) => (
@@ -2225,9 +2427,11 @@ const AdminEditContentPage = () => {
                 </div>
             ))}
             <button type="button" onClick={handleAddAudioField} className="button-secondary text-sm">+ Add Audio Narration URL</button>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-2">
+                Note: AI-generated audio is handled via the "Audio" mode on the content consumption page. These fields are for manually added URLs.
+            </p>
         </fieldset>
         
-        {/* Read-Only AI Sections */}
          {(formData.simplifiedVersions?.length > 0 || formData.visualMaps?.length > 0) && (
           <div className="space-y-6 mt-6">
             {formData.simplifiedVersions?.length > 0 && (
@@ -2244,6 +2448,9 @@ const AdminEditContentPage = () => {
                     </div>
                   </div>
                 ))}
+                 <p className="text-xs text-[var(--color-text-secondary)] mt-2">
+                    These are generated on-demand by users/AI via the content consumption page. They are displayed here for review.
+                </p>
               </fieldset>
             )}
 
@@ -2256,7 +2463,7 @@ const AdminEditContentPage = () => {
                         <p className="text-sm font-semibold text-[var(--color-text-primary)]">Format: <span className="capitalize font-normal bg-secondary/10 text-secondary dark:bg-secondary-light/20 dark:text-secondary-light px-2 py-0.5 rounded-full text-xs body-theme-high-contrast:bg-hc-link body-theme-high-contrast:text-hc-background">{vMap.format}</span></p>
                         <p className="text-xs text-[var(--color-text-secondary)]">{new Date(vMap.createdAt).toLocaleString()}</p>
                     </div>
-                    <div className="mt-1 p-2 bg-[var(--color-card-background)] border border-[var(--color-border)] rounded max-h-[400px] overflow-y-auto"> {/* Increased max-h */}
+                    <div className="mt-1 p-2 bg-[var(--color-card-background)] border border-[var(--color-border)] rounded max-h-[400px] overflow-y-auto">
                     {vMap.format === 'mermaid' ? (
                         <MermaidDiagram chartData={vMap.data} diagramId={`admin-map-${contentId}-${index}-${new Date(vMap.createdAt).getTime()}`} />  
                     ) : (
@@ -2266,6 +2473,9 @@ const AdminEditContentPage = () => {
                     {vMap.notes && <p className="text-xs text-[var(--color-text-secondary)] mt-1 italic">Notes: {vMap.notes}</p>}
                   </div>
                 ))}
+                 <p className="text-xs text-[var(--color-text-secondary)] mt-2">
+                    Generated on-demand by users/AI. Displayed for review.
+                </p>
               </fieldset>
             )}
           </div>
@@ -2280,6 +2490,335 @@ const AdminEditContentPage = () => {
 };
 
 export default AdminEditContentPage;
+
+===== File: /src/pages/admin/AdminUserManagementPage.jsx =====
+// src/pages/admin/AdminUserManagementPage.jsx
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom'; // Added useLocation, useNavigate
+import { getAllUsersAdmin, updateUserRoleAdmin, deleteUserAdmin } from '../../services/userService';
+import { useAuth } from '../../contexts/AuthContext';
+import { toast } from 'react-toastify';
+
+const LoadingMessage = () => <div className="p-4 text-center text-[var(--color-text-secondary)]">Loading users...</div>;
+const ErrorAlert = ({ message }) => (
+    <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700 dark:bg-red-900/20 dark:border-red-700 dark:text-red-300 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link" role="alert">{message}</div>
+);
+
+// Reusable Pagination Component (same as in AdminContentListPage, could be common)
+const Pagination = ({ currentPage, totalPages, onPageChange, disabled }) => {
+  if (totalPages <= 1) return null;
+  const pageNumbers = [];
+  const maxPagesToShow = 5;
+  let startPage, endPage;
+  if (totalPages <= maxPagesToShow) {
+    startPage = 1;
+    endPage = totalPages;
+  } else {
+    if (currentPage <= Math.ceil(maxPagesToShow / 2)) {
+      startPage = 1;
+      endPage = maxPagesToShow;
+    } else if (currentPage + Math.floor(maxPagesToShow / 2) >= totalPages) {
+      startPage = totalPages - maxPagesToShow + 1;
+      endPage = totalPages;
+    } else {
+      startPage = currentPage - Math.floor(maxPagesToShow / 2);
+      endPage = currentPage + Math.floor(maxPagesToShow / 2);
+    }
+  }
+  for (let i = startPage; i <= endPage; i++) {
+    pageNumbers.push(i);
+  }
+  return (
+    <nav aria-label="Users pagination" className="mt-6 flex justify-center">
+      <ul className="inline-flex items-center -space-x-px">
+        <li><button onClick={() => onPageChange(1)} disabled={disabled || currentPage === 1} className="px-3 py-2 ml-0 leading-tight text-gray-500 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">First</button></li>
+        <li><button onClick={() => onPageChange(currentPage - 1)} disabled={disabled || currentPage === 1} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Previous</button></li>
+        {startPage > 1 && <li><span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span></li>}
+        {pageNumbers.map(number => (<li key={number}><button onClick={() => onPageChange(number)} disabled={disabled} className={`px-3 py-2 leading-tight border ${ currentPage === number ? 'text-primary-dark bg-primary/20 border-primary-dark dark:bg-primary-light/30 dark:text-white dark:border-primary-light font-semibold' : 'text-gray-500 bg-white border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white'}`}>{number}</button></li>))}
+        {endPage < totalPages && <li><span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span></li>}
+        <li><button onClick={() => onPageChange(currentPage + 1)} disabled={disabled || currentPage === totalPages} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Next</button></li>
+        <li><button onClick={() => onPageChange(totalPages)} disabled={disabled || currentPage === totalPages} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 rounded-r-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Last</button></li>
+      </ul>
+    </nav>
+  );
+};
+
+
+const AdminUserManagementPage = () => {
+  const { user: currentUser } = useAuth(); 
+  const [userData, setUserData] = useState({ users: [], currentPage: 1, totalPages: 1, totalUsers: 0});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const parseUserQueryParams = () => {
+    const params = new URLSearchParams(location.search);
+    return {
+      search: params.get('search') || '',
+      role: params.get('role') || '',
+      sortBy: params.get('sortBy') || 'createdAt:desc',
+      page: parseInt(params.get('page')) || 1,
+      limit: parseInt(params.get('limit')) || 10,
+    };
+  };
+  const [activeUserFilters, setActiveUserFilters] = useState(parseUserQueryParams());
+
+
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const paramsToFetch = { ...activeUserFilters };
+    Object.keys(paramsToFetch).forEach(key => (paramsToFetch[key] === '' || paramsToFetch[key] === null) && delete paramsToFetch[key]);
+
+    try {
+      const data = await getAllUsersAdmin(paramsToFetch);
+      setUserData(data);
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to fetch users.';
+      setError(errorMsg);
+      toast.error(errorMsg);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeUserFilters]);
+
+  useEffect(() => {
+    const newSearch = new URLSearchParams(activeUserFilters).toString();
+    navigate(`${location.pathname}?${newSearch}`, { replace: true });
+    fetchUsers();
+  }, [activeUserFilters, fetchUsers, navigate, location.pathname]);
+
+
+  const handleUserFilterChange = (e) => {
+    const { name, value } = e.target;
+    setActiveUserFilters(prev => ({ ...prev, [name]: value, page: 1 }));
+  };
+
+  const handleUserSortChange = (e) => {
+    setActiveUserFilters(prev => ({ ...prev, sortBy: e.target.value, page: 1 }));
+  };
+
+  const handleUserPageChange = (pageNumber) => {
+     if (pageNumber >= 1 && pageNumber <= userData.totalPages) {
+      setActiveUserFilters(prev => ({ ...prev, page: pageNumber }));
+    }
+  };
+  
+  const handleUserLimitChange = (e) => {
+    setActiveUserFilters(prev => ({ ...prev, limit: parseInt(e.target.value), page: 1}));
+  }
+
+
+  const handleRoleChange = async (userId, newRole) => {
+    if (currentUser._id === userId && newRole !== 'admin') {
+        const adminUsers = userData.users.filter(u => u.role === 'admin');
+        if (adminUsers.length <= 1) {
+            toast.error("Cannot remove the last admin's role.");
+            return;
+        }
+    }
+    try {
+      const updatedUser = await updateUserRoleAdmin(userId, newRole);
+      // Optimistic update or re-fetch:
+      setUserData(prevData => ({
+          ...prevData,
+          users: prevData.users.map(u => u._id === userId ? { ...u, role: updatedUser.role } : u)
+      }));
+      toast.success('User role updated successfully!');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Failed to update role.');
+    }
+  };
+
+  const handleDeleteUser = async (userIdToDelete, userName) => {
+    if (currentUser._id === userIdToDelete) {
+        toast.error("You cannot delete your own account.");
+        return;
+    }
+    if (window.confirm(`Are you sure you want to delete user "${userName || 'this user'}"? This action cannot be undone.`)) {
+      try {
+        await deleteUserAdmin(userIdToDelete);
+        toast.success(`User "${userName || 'User'}" deleted successfully.`);
+        if (userData.users.length === 1 && activeUserFilters.page > 1) {
+            setActiveUserFilters(prev => ({ ...prev, page: prev.page - 1 }));
+        } else {
+            fetchUsers();
+        }
+      } catch (err) {
+        toast.error(err.response?.data?.error || 'Failed to delete user.');
+      }
+    }
+  };
+
+
+  if (loading && userData.users.length === 0 && activeUserFilters.page === 1) return <LoadingMessage />;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <h1 className="text-2xl font-semibold">User Management</h1>
+         <Link to="/admin" className="text-sm hover:underline text-[var(--color-link)]">
+            ← Back to Admin Dashboard
+        </Link>
+      </div>
+      
+      {error && <ErrorAlert message={error} />}
+
+      <div className="card p-4 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+                <label htmlFor="search-users" className="form-label-default">Search by Name or Email</label>
+                <input
+                type="search" name="search" id="search-users"
+                placeholder="Enter name or email..."
+                className="form-input-default"
+                value={activeUserFilters.search}
+                onChange={handleUserFilterChange}
+                />
+            </div>
+            <div>
+                <label htmlFor="role-filter" className="form-label-default">Filter by Role</label>
+                <select name="role" id="role-filter" className="form-input-default" value={activeUserFilters.role} onChange={handleUserFilterChange}>
+                <option value="">All Roles</option>
+                <option value="user">User</option>
+                <option value="creator">Creator</option>
+                <option value="admin">Admin</option>
+                </select>
+            </div>
+            <div>
+              <label htmlFor="user-sort-by" className="form-label-default">Sort By</label>
+              <select name="sortBy" id="user-sort-by" value={activeUserFilters.sortBy} onChange={handleUserSortChange} className="form-input-default">
+                <option value="createdAt:desc">Joined Date (Newest)</option>
+                <option value="createdAt:asc">Joined Date (Oldest)</option>
+                <option value="name:asc">Name (A-Z)</option>
+                <option value="name:desc">Name (Z-A)</option>
+                <option value="email:asc">Email (A-Z)</option>
+              </select>
+            </div>
+        </div>
+        <div>
+            <label htmlFor="user-limit-select" className="form-label-default">Items per Page</label>
+            <select id="user-limit-select" name="limit" value={activeUserFilters.limit} onChange={handleUserLimitChange} className="form-input-default !w-auto">
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            </select>
+        </div>
+      </div>
+
+      {loading && <div className="p-4 text-center text-sm text-[var(--color-text-secondary)] animate-pulse">Updating list...</div>}
+
+
+      {!loading && userData.users.length === 0 && (
+        <div className="card text-center py-8">
+            <p className="text-[var(--color-text-secondary)]">
+                {activeUserFilters.search || activeUserFilters.role ? 'No users match your criteria.' : 'No users found.'}
+            </p>
+        </div>
+      )}
+
+      {userData.users.length > 0 && (
+        <div className="card overflow-x-auto p-0 md:p-0">
+          <table className="min-w-full divide-y divide-[var(--color-border)]">
+            <thead className="bg-gray-100 dark:bg-slate-800 body-theme-high-contrast:bg-gray-900">
+              <tr>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Name</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Email</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Role</th>
+                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Joined</th>
+                <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-[var(--color-text-secondary)] uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border)]">
+              {userData.users.map((user) => (
+                <tr key={user._id} className="hover:bg-gray-50 dark:hover:bg-slate-800/50 body-theme-high-contrast:hover:bg-gray-700 transition-colors duration-150">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-[var(--color-text-primary)]">{user.name || 'N/A'}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--color-text-secondary)]">{user.email}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--color-text-secondary)]">
+                    <select
+                      value={user.role}
+                      onChange={(e) => handleRoleChange(user._id, e.target.value)}
+                      className="form-input-default !py-1 !px-2 !text-xs !w-auto disabled:opacity-70 disabled:cursor-not-allowed"
+                      disabled={currentUser._id === user._id && user.role === 'admin' && userData.users.filter(u=>u.role === 'admin').length <=1 }
+                    >
+                      <option value="user">User</option>
+                      <option value="creator">Creator</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-[var(--color-text-secondary)]">{new Date(user.createdAt).toLocaleDateString()}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <button
+                      onClick={() => handleDeleteUser(user._id, user.name || user.email)}
+                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 body-theme-high-contrast:text-red-400 body-theme-high-contrast:hover:text-red-300 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={currentUser._id === user._id}
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+       <Pagination 
+        currentPage={activeUserFilters.page} 
+        totalPages={userData.totalPages} 
+        onPageChange={handleUserPageChange} 
+        disabled={loading}
+      />
+       <p className="text-sm text-center text-[var(--color-text-secondary)] mt-2">
+        Showing {userData.users.length} of {userData.totalUsers} total users.
+      </p>
+    </div>
+  );
+};
+
+export default AdminUserManagementPage;
+
+===== File: /src/pages/creator/CreatorDashboardPage.jsx =====
+// src/pages/creator/CreatorDashboardPage.jsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+
+const ContentIcon = () => <span className="text-2xl mr-2">📝</span>;
+
+const CreatorDashboardPage = () => {
+  const { user } = useAuth();
+
+  return (
+    <div className="container mx-auto p-4 md:p-6">
+      <h1>Creator Studio</h1>
+      <p className="mb-8 text-lg text-[var(--color-text-secondary)]">
+        Welcome, <span className="font-semibold">{user?.name || user?.email || 'Creator'}</span>! Manage your learning content here.
+      </p>
+
+      <h2 className="text-2xl font-semibold text-[var(--color-text-primary)] mb-6">Your Tools</h2>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <Link
+          to="/creator/content"
+          className="card hover:shadow-lg transition-shadow"
+        >
+          <div className="flex items-center mb-3">
+            <ContentIcon />
+            <h3 className="text-xl font-semibold text-[var(--color-text-primary)]">Manage Content</h3>
+          </div>
+          <p className="text-[var(--color-text-secondary)] text-sm">
+            Create new topics, edit existing materials, and view all content.
+          </p>
+        </Link>
+        {/* Add more creator-specific links here if needed */}
+      </div>
+    </div>
+  );
+};
+
+export default CreatorDashboardPage;
 
 ===== File: /src/reportWebVitals.js =====
 const reportWebVitals = onPerfEntry => {
@@ -2381,9 +2920,8 @@ export const updateUserPreferences = async (preferencesData) => {
 // src/services/contentService.js
 import api from './api';
 
-// --- User-facing functions (from Phase 1, ensure they exist) ---
 export const getContentByTopic = async (topic) => {
-  const response = await api.get(`/content/topic/${topic}`); // Corrected path
+  const response = await api.get(`/content/topic/${topic}`);
   return response.data;
 };
 
@@ -2397,46 +2935,63 @@ export const generateVisualMap = async (topic, format = 'mermaid') => {
   return response.data;
 };
 
-export const generateAudioNarration = async (contentId, textToNarrate) => { // Simplified params for now
-  // Assuming backend takes contentId and figures out text or uses default
+export const generateAudioNarration = async (contentId, textToNarrate) => {
   const response = await api.post(`/content/generate-audio`, { contentId, textToNarrate });
   return response.data;
 };
 
 export const findVideoExplainers = async (contentId, query) => {
   const response = await api.post(`/content/find-videos`, { contentId, query });
-  return response.data; // Backend placeholder returns content with video added
+  return response.data;
 };
 
-
-// --- Admin-facing functions (NEW for Phase 3) ---
-export const getAllContentForAdmin = async () => {
-  // Backend route /api/content/ (GET) is protected but not admin-only by default in your current routes.
-  // Let's assume it returns enough for admin listing or we create a new admin-specific one.
-  // For now, we'll use the existing GET /api/content, which might need adjustment for admin needs.
-  const response = await api.get('/content'); // This route is already `protect`
-  return response.data; // Returns [{ topic, tags, createdAt }, ...]
+export const getPublishedContentList = async (params = {}) => {
+  const response = await api.get('/content', { params }); 
+  return response.data; 
 };
 
-export const getContentByIdForAdmin = async (contentId) => {
-  const response = await api.get(`/content/${contentId}`); // This route is `protect, isAdmin`
-  return response.data; // Returns full content object
+export const getContentByIdForEditing = async (contentId) => {
+  const response = await api.get(`/content/${contentId}`); 
+  return response.data;
 };
 
 export const createContent = async (contentData) => {
-  // contentData = { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations }
-  const response = await api.post('/content/create', contentData); // `protect, isAdmin`
+  const response = await api.post('/content/create', contentData);
   return response.data;
 };
 
 export const updateContent = async (contentId, contentData) => {
-  const response = await api.put(`/content/${contentId}`, contentData); // `protect, isAdmin`
+  const response = await api.put(`/content/${contentId}`, contentData);
   return response.data;
 };
 
 export const deleteContent = async (contentId) => {
-  const response = await api.delete(`/content/${contentId}`); // `protect, isAdmin`
-  return response.data; // Returns { message: 'Content removed successfully.' }
+  const response = await api.delete(`/content/${contentId}`);
+  return response.data;
+};
+
+===== File: /src/services/userService.js =====
+// src/services/userService.js
+import api from './api';
+
+export const getAllUsersAdmin = async () => {
+  const response = await api.get('/users');
+  return response.data;
+};
+
+export const getUserByIdAdmin = async (userId) => {
+  const response = await api.get(`/users/${userId}`);
+  return response.data;
+};
+
+export const updateUserRoleAdmin = async (userId, role) => {
+  const response = await api.put(`/users/${userId}/role`, { role });
+  return response.data;
+};
+
+export const deleteUserAdmin = async (userId) => {
+  const response = await api.delete(`/users/${userId}`);
+  return response.data;
 };
 
 ===== File: /src/setupTests.js =====

@@ -12,8 +12,6 @@ const ErrorAlert = ({ message }) => (
 const Pagination = ({ currentPage, totalPages, onPageChange, disabled }) => {
   if (totalPages <= 1) return null;
   const pageNumbers = [];
-  
-  // Logic for limited page numbers (e.g., first, last, current +/- 2)
   const maxPagesToShow = 5;
   let startPage, endPage;
   if (totalPages <= maxPagesToShow) {
@@ -31,73 +29,19 @@ const Pagination = ({ currentPage, totalPages, onPageChange, disabled }) => {
       endPage = currentPage + Math.floor(maxPagesToShow / 2);
     }
   }
-
   for (let i = startPage; i <= endPage; i++) {
     pageNumbers.push(i);
   }
-
   return (
     <nav aria-label="Content pagination" className="mt-6 flex justify-center">
       <ul className="inline-flex items-center -space-x-px">
-        <li>
-          <button
-            onClick={() => onPageChange(1)}
-            disabled={disabled || currentPage === 1}
-            className="px-3 py-2 ml-0 leading-tight text-gray-500 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
-          >
-            First
-          </button>
-        </li>
-        <li>
-          <button
-            onClick={() => onPageChange(currentPage - 1)}
-            disabled={disabled || currentPage === 1}
-            className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
-          >
-            Previous
-          </button>
-        </li>
-        {startPage > 1 && (
-            <li>
-                <span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span>
-            </li>
-        )}
-        {pageNumbers.map(number => (
-          <li key={number}>
-            <button
-              onClick={() => onPageChange(number)}
-              disabled={disabled}
-              className={`px-3 py-2 leading-tight border ${ currentPage === number 
-                ? 'text-primary-dark bg-primary/20 border-primary-dark dark:bg-primary-light/30 dark:text-white dark:border-primary-light font-semibold' 
-                : 'text-gray-500 bg-white border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white'}`}
-            >
-              {number}
-            </button>
-          </li>
-        ))}
-        {endPage < totalPages && (
-             <li>
-                <span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span>
-            </li>
-        )}
-        <li>
-          <button
-            onClick={() => onPageChange(currentPage + 1)}
-            disabled={disabled || currentPage === totalPages}
-            className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
-          >
-            Next
-          </button>
-        </li>
-         <li>
-          <button
-            onClick={() => onPageChange(totalPages)}
-            disabled={disabled || currentPage === totalPages}
-            className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 rounded-r-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
-          >
-            Last
-          </button>
-        </li>
+        <li><button onClick={() => onPageChange(1)} disabled={disabled || currentPage === 1} className="px-3 py-2 ml-0 leading-tight text-gray-500 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">First</button></li>
+        <li><button onClick={() => onPageChange(currentPage - 1)} disabled={disabled || currentPage === 1} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Prev</button></li>
+        {startPage > 1 && <li><span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span></li>}
+        {pageNumbers.map(number => (<li key={number}><button onClick={() => onPageChange(number)} disabled={disabled} className={`px-3 py-2 leading-tight border ${ currentPage === number ? 'text-primary-dark bg-primary/20 border-primary-dark dark:bg-primary-light/30 dark:text-white dark:border-primary-light font-semibold' : 'text-gray-500 bg-white border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white'}`}>{number}</button></li>))}
+        {endPage < totalPages && <li><span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span></li>}
+        <li><button onClick={() => onPageChange(currentPage + 1)} disabled={disabled || currentPage === totalPages} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Next</button></li>
+        <li><button onClick={() => onPageChange(totalPages)} disabled={disabled || currentPage === totalPages} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 rounded-r-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Last</button></li>
       </ul>
     </nav>
   );
@@ -111,32 +55,30 @@ const AdminContentListPage = () => {
   
   const location = useLocation();
   const navigate = useNavigate();
+  const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
   
-  const parseQueryParams = () => {
+  const parseQueryParams = useCallback(() => {
     const params = new URLSearchParams(location.search);
     return {
       search: params.get('search') || '',
       tag: params.get('tag') || '',
-      creatorId: params.get('creatorId') || '', // Example: if you add creator filter
       sortBy: params.get('sortBy') || 'createdAt:desc',
       page: parseInt(params.get('page')) || 1,
       limit: parseInt(params.get('limit')) || 10,
     };
-  };
+  }, [location.search]);
 
   const [activeFilters, setActiveFilters] = useState(parseQueryParams());
 
+  useEffect(() => {
+    setActiveFilters(parseQueryParams());
+  }, [parseQueryParams]);
 
-  const fetchContents = useCallback(async () => {
+  const fetchContents = useCallback(async (filtersToFetch) => {
     setLoading(true);
     setError(null);
-    
-    const paramsToFetch = { ...activeFilters };
-    // Remove empty filter values before sending to API
-    Object.keys(paramsToFetch).forEach(key => (paramsToFetch[key] === '' || paramsToFetch[key] === null) && delete paramsToFetch[key]);
-
     try {
-      const data = await getPublishedContentList(paramsToFetch);
+      const data = await getPublishedContentList(filtersToFetch);
       setContentData(data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to fetch content list.');
@@ -144,19 +86,32 @@ const AdminContentListPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeFilters]); // Depend on the single state object for filters/pagination
+  }, []);
 
   useEffect(() => {
-    // Update URL when activeFilters change
-    const newSearch = new URLSearchParams(activeFilters).toString();
-    navigate(`${location.pathname}?${newSearch}`, { replace: true });
-    fetchContents();
-  }, [activeFilters, fetchContents, navigate, location.pathname]);
+    const paramsForUrl = new URLSearchParams();
+    Object.entries(activeFilters).forEach(([key, value]) => {
+      if (value) { // Only add if value is not empty/null/undefined
+        if (key === 'page' && value === 1 && !paramsForUrl.has('page')) { /* skip if default */ }
+        else if (key === 'limit' && value === 10 && !paramsForUrl.has('limit')) { /* skip if default */ }
+        else if (key === 'sortBy' && value === 'createdAt:desc' && !paramsForUrl.has('sortBy')) { /* skip if default */ }
+        else {
+          paramsForUrl.set(key, value);
+        }
+      }
+    });
+    const newSearchString = paramsForUrl.toString();
+    
+    if (location.search.substring(1) !== newSearchString) {
+        navigate(`${location.pathname}?${newSearchString}`, { replace: true });
+    }
+    fetchContents(activeFilters);
+  }, [activeFilters, fetchContents, navigate, location.pathname, location.search]);
 
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    setActiveFilters(prev => ({ ...prev, [name]: value, page: 1 })); // Reset page on filter change
+    setActiveFilters(prev => ({ ...prev, [name]: value.trim(), page: 1 }));
   };
 
   const handleSortChange = (e) => {
@@ -164,7 +119,7 @@ const AdminContentListPage = () => {
   };
   
   const handlePageChange = (pageNumber) => {
-    if (pageNumber >= 1 && pageNumber <= contentData.totalPages) {
+    if (pageNumber >= 1 && pageNumber <= contentData.totalPages && pageNumber !== activeFilters.page) {
       setActiveFilters(prev => ({ ...prev, page: pageNumber }));
     }
   };
@@ -174,32 +129,34 @@ const AdminContentListPage = () => {
   }
 
   const handleDelete = async (contentId, topic) => {
-    if (window.confirm(`Are you sure you want to delete the topic "${topic}"? This action cannot be undone.`)) {
+    if (window.confirm(`Are you sure you want to delete the topic "${topic.replace(/-/g, ' ')}"? This action cannot be undone.`)) {
       try {
         await deleteContent(contentId);
-        toast.success(`Topic "${topic}" deleted successfully.`);
-        // Re-fetch content, considering current page might become invalid if last item deleted
-        if (contentData.contents.length === 1 && activeFilters.page > 1) {
-            setActiveFilters(prev => ({ ...prev, page: prev.page - 1 }));
-        } else {
-            fetchContents(); 
-        }
+        toast.success(`Topic "${topic.replace(/-/g, ' ')}" deleted successfully.`);
+        const newPage = (contentData.contents.length === 1 && activeFilters.page > 1) ? activeFilters.page - 1 : activeFilters.page;
+        // Trigger refetch by updating filters which useEffect listens to
+        setActiveFilters(prev => ({ ...prev, page: newPage, _triggerRefetch: Date.now() })); // Add a dummy prop to ensure state change
       } catch (err) {
-        const deleteError = err.response?.data?.error || `Failed to delete topic "${topic}".`;
-        setError(deleteError); // Still useful for a persistent error message
+        const deleteError = err.response?.data?.error || `Failed to delete topic "${topic.replace(/-/g, ' ')}".`;
+        setError(deleteError); 
         toast.error(deleteError);
       }
     }
   };
-
-  const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
 
   if (loading && contentData.contents.length === 0 && activeFilters.page === 1) return <LoadingMessage />;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-semibold">Manage Content</h1>
+        <div className="flex items-center gap-2">
+           <Link to={basePath} className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors" title={`Back to ${basePath === '/admin' ? 'Admin' : 'Creator'} Dashboard`}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-[var(--color-text-secondary)]">
+              <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.56l2.72 2.72a.75.75 0 1 1-1.06 1.06l-4-4a.75.75 0 0 1 0-1.06l4-4a.75.75 0 0 1 1.06 1.06L5.56 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+            </svg>
+          </Link>
+          <h1 className="text-2xl font-semibold">Manage Content</h1>
+        </div>
         <Link to={`${basePath}/content/create`} className="button-primary text-sm whitespace-nowrap">
           Create New Content
         </Link>
@@ -210,7 +167,7 @@ const AdminContentListPage = () => {
       <div className="card p-4 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="search-content" className="form-label-default">Search Topic/Tag</label>
+              <label htmlFor="search-content" className="form-label-default">Search Topic/Tag/Text</label>
               <input
                 type="search" name="search" id="search-content"
                 placeholder="Enter keyword..."
@@ -229,14 +186,6 @@ const AdminContentListPage = () => {
                 onChange={handleFilterChange}
               />
             </div>
-            {/* Add Creator Filter if needed by fetching list of creators */}
-            {/* <div>
-                <label htmlFor="creator-filter" className="form-label-default">Filter by Creator</label>
-                <select name="creatorId" id="creator-filter" value={activeFilters.creatorId} onChange={handleFilterChange} className="form-input-default">
-                    <option value="">All Creators</option>
-                    {/* Populate with creators */}
-                {/* </select>
-            </div> */}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -262,12 +211,12 @@ const AdminContentListPage = () => {
         </div>
       </div>
 
-      {loading && <div className="p-4 text-center text-sm text-[var(--color-text-secondary)] animate-pulse">Updating list...</div>}
+      {loading && contentData.contents.length === 0 && <div className="p-4 text-center text-sm text-[var(--color-text-secondary)] animate-pulse">Updating list...</div>}
 
       {!loading && contentData.contents.length === 0 && (
         <div className="card text-center py-8">
             <p className="text-[var(--color-text-secondary)]">
-              {activeFilters.search || activeFilters.tag ? `No content matches your criteria.` : "No content found. Get started by creating some!"}
+              {(activeFilters.search || activeFilters.tag) ? `No content matches your criteria.` : "No content found. Get started by creating some!"}
             </p>
         </div>
       )}

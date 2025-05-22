@@ -1,23 +1,32 @@
 // ===== File: /middleware/authMiddleware.js =====
 const jwt = require('jsonwebtoken');
-const User = require('../models/User'); // Adjust path as needed
+const User = require('../models/User'); // Adjust path as per your project structure
 
 const protect = async (req, res, next) => {
   let token;
+
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     try {
       token = req.headers.authorization.split(' ')[1];
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       req.user = await User.findById(decoded.id).select('-password');
+
       if (!req.user) {
         return res.status(401).json({ error: 'Not authorized, user not found' });
       }
       next();
     } catch (error) {
-      console.error('Token verification failed:', error);
+      console.error('Token verification failed:', error.message);
+      if (error.name === 'JsonWebTokenError') {
+        return res.status(401).json({ error: 'Not authorized, token failed (invalid signature)' });
+      }
+      if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({ error: 'Not authorized, token expired' });
+      }
       return res.status(401).json({ error: 'Not authorized, token failed' });
     }
   }
+
   if (!token) {
     return res.status(401).json({ error: 'Not authorized, no token' });
   }
@@ -31,7 +40,7 @@ const isAdmin = (req, res, next) => {
   }
 };
 
-const isCreator = (req, res, next) => { 
+const isCreator = (req, res, next) => {
   if (req.user && req.user.role === 'creator') {
     next();
   } else {

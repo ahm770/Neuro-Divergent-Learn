@@ -1,11 +1,8 @@
 // ===== File: /controllers/userController.js =====
 const User = require('../models/User');
 const mongoose = require('mongoose');
-const logAction = require('../utils/auditLogger'); // Import the logger
+const logAction = require('../utils/auditLogger');
 
-// @desc    Get all users with pagination, filtering, sorting
-// @route   GET /api/users
-// @access  Admin
 exports.getAllUsers = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -13,26 +10,20 @@ exports.getAllUsers = async (req, res) => {
         const skip = (page - 1) * limit;
 
         const query = {};
-        // Filtering
-        if (req.query.search) {
-            const searchRegex = new RegExp(req.query.search, 'i');
-            query.$or = [
-                { name: searchRegex },
-                { email: searchRegex }
-            ];
+        if (req.query.search && req.query.search.trim() !== '') {
+            const searchRegex = new RegExp(req.query.search.trim(), 'i');
+            query.$or = [ { name: searchRegex }, { email: searchRegex } ];
         }
         if (req.query.role && ['user', 'creator', 'admin'].includes(req.query.role)) {
             query.role = req.query.role;
         }
-        // Add other filters like date joined range if needed
 
-        // Sorting
         const sortOptions = {};
         if (req.query.sortBy) {
             const parts = req.query.sortBy.split(':');
             sortOptions[parts[0]] = parts[1] === 'desc' ? -1 : 1;
         } else {
-            sortOptions.createdAt = -1; // Default sort
+            sortOptions.createdAt = -1;
         }
 
         const users = await User.find(query)
@@ -44,30 +35,20 @@ exports.getAllUsers = async (req, res) => {
         const totalUsers = await User.countDocuments(query);
         const totalPages = Math.ceil(totalUsers / limit);
 
-        res.json({
-            users,
-            currentPage: page,
-            totalPages,
-            totalUsers
-        });
+        res.json({ users, currentPage: page, totalPages, totalUsers });
     } catch (error) {
         console.error("Get All Users Error:", error);
         res.status(500).json({ error: 'Server error fetching users' });
     }
 };
 
-// @desc    Get user by ID
-// @route   GET /api/users/:id
-// @access  Admin
 exports.getUserById = async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
             return res.status(400).json({ error: 'Invalid user ID format' });
         }
         const user = await User.findById(req.params.id).select('-password');
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
+        if (!user) { return res.status(404).json({ error: 'User not found' }); }
         res.json(user);
     } catch (error) {
         console.error("Get User By ID Error:", error);
@@ -75,9 +56,6 @@ exports.getUserById = async (req, res) => {
     }
 };
 
-// @desc    Update user role
-// @route   PUT /api/users/:id/role
-// @access  Admin
 exports.updateUserRole = async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -89,9 +67,7 @@ exports.updateUserRole = async (req, res) => {
         }
 
         const user = await User.findById(req.params.id);
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
+        if (!user) { return res.status(404).json({ error: 'User not found' }); }
 
         if (user.id.toString() === req.user.id && user.role === 'admin' && role !== 'admin') {
             const adminCount = await User.countDocuments({ role: 'admin' });
@@ -100,7 +76,12 @@ exports.updateUserRole = async (req, res) => {
             }
         }
         
-        const oldRole = user.role; // Capture old role for audit
+        const oldRole = user.role;
+        if (oldRole === role) { // No change
+             const userToReturn = user.toObject();
+             delete userToReturn.password;
+             return res.json(userToReturn);
+        }
         user.role = role;
         await user.save();
         
@@ -109,7 +90,7 @@ exports.updateUserRole = async (req, res) => {
             'UPDATE_USER_ROLE',
             'User',
             user._id, 
-            { targetUserId: user._id.toString(), oldRole: oldRole, newRole: role },
+            { targetUserId: user._id.toString(), targetUserEmail: user.email, oldRole: oldRole, newRole: role },
             req.ip
         );
 
@@ -122,32 +103,28 @@ exports.updateUserRole = async (req, res) => {
     }
 };
 
-// @desc    Delete a user
-// @route   DELETE /api/users/:id
-// @access  Admin
 exports.deleteUserCtrl = async (req, res) => {
     try {
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
             return res.status(400).json({ error: 'Invalid user ID format' });
         }
-        const user = await User.findById(req.params.id);
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
+        const userToDelete = await User.findById(req.params.id); // Renamed variable
+        if (!userToDelete) { return res.status(404).json({ error: 'User not found' }); }
 
-        if (req.user.id === user.id.toString()) {
+        if (req.user.id === userToDelete.id.toString()) {
              return res.status(400).json({ error: 'Admin cannot delete themselves.' });
         }
         
-        const deletedUserEmail = user.email; // For audit log
-        await user.deleteOne(); 
+        const deletedUserEmail = userToDelete.email;
+        const deletedUserId = userToDelete._id.toString(); // Capture ID before deletion
+        await userToDelete.deleteOne(); 
         
         await logAction(
             req.user.id, 
             'DELETE_USER',
             'User',
-            req.params.id, 
-            { targetUserId: req.params.id, email: deletedUserEmail },
+            deletedUserId, // Use the string ID here for consistency if entityId is not always ObjectId
+            { targetUserId: deletedUserId, targetUserEmail: deletedUserEmail },
             req.ip
         );
 

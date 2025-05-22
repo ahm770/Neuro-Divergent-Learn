@@ -1,8 +1,14 @@
 // src/services/userService.js
 import api from './api';
 
-export const getAllUsersAdmin = async () => {
-  const response = await api.get('/users');
+export const getAllUsersAdmin = async (params = {}) => {
+  const cleanParams = {};
+  for (const key in params) {
+    if (params[key] !== '' && params[key] !== null && params[key] !== undefined) {
+      cleanParams[key] = params[key];
+    }
+  }
+  const response = await api.get('/users', { params: cleanParams });
   return response.data;
 };
 
