@@ -1,3 +1,4 @@
+// ===== File: /app.js =====
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -11,6 +12,7 @@ const requiredEnvVars = [
   'MONGO_URI',
   'JWT_SECRET',
   'OPENROUTER_API_KEY',
+  'GOOGLE_API_KEY', // Ensure this is checked if not already
   // 'YOUR_SITE_URL', // Recommended, but provide defaults in controllers if not set
   // 'YOUR_SITE_NAME', // Recommended, but provide defaults if not set
   // 'OPENROUTER_DEFAULT_MODEL' // Has a default in controllers
@@ -26,37 +28,39 @@ const app = express();
 
 // --- Middleware ---
 const corsOptions = {
-  origin: [ 
+  origin: [
     "http://127.0.0.1:3000",
     "http://localhost:3000",
     "http://[::1]:3000",
-    process.env.FRONTEND_URL, 
-    "https://opulent-garbanzo-975vgqvp4jj4cg6x-3000.app.github.dev" 
-  ].filter(Boolean), 
+    process.env.FRONTEND_URL,
+    "https://opulent-garbanzo-975vgqvp4jj4cg6x-3000.app.github.dev"
+  ].filter(Boolean),
   credentials: true,
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   preflightContinue: false,
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
-app.use(helmet()); 
-app.use(express.json({ limit: '10mb' })); 
-app.use(express.urlencoded({ extended: true, limit: '10mb' })); 
+app.use(helmet());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev')); 
+  app.use(morgan('dev'));
 }
 
 // --- Routes ---
 const authRoutes = require('./routes/authRoutes');
 const contentRoutes = require('./routes/contentRoutes');
 const qaRoutes = require('./routes/qaRoutes');
-const userRoutes = require('./routes/userRoutes'); // Added userRoutes
+const userRoutes = require('./routes/userRoutes');
+const taskRoutes = require('./routes/taskRoutes'); // Includes learning progress routes
 
 app.use('/api/auth', authRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/qa', qaRoutes);
-app.use('/api/users', userRoutes); // Added userRoutes registration
+app.use('/api/users', userRoutes);
+app.use('/api/tasks', taskRoutes); // All task and learning progress related routes
 
 
 // --- Database Connection ---
@@ -64,7 +68,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected successfully."))
   .catch(err => {
     console.error("MongoDB connection error:", err.message);
-    process.exit(1); 
+    process.exit(1);
   });
 
 // --- Basic Welcome Route ---

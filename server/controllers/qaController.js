@@ -2,87 +2,116 @@
 const axios = require('axios');
 const Session = require('../models/Session');
 const Content = require('../models/Content');
-const User = require('../models/User'); // To get user preferences
+const User = require('../models/User');
+const mongoose = require('mongoose'); // For ObjectId validation
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const OPENROUTER_DEFAULT_MODEL = process.env.OPENROUTER_DEFAULT_MODEL || 'mistralai/mistral-7b-instruct:free';
-const YOUR_SITE_URL = process.env.YOUR_SITE_URL || 'http://localhost:3000';
-const YOUR_SITE_NAME = process.env.YOUR_SITE_NAME || 'AccessibleLearningPortal';
+const OPENROUTER_DEFAULT_MODEL = process.env.OPENROUTER_DEFAULT_MODEL || 'mistralai/mistral-7b-instruct:free'; // or a better free/paid model
+const YOUR_SITE_URL = process.env.YOUR_SITE_URL || 'http://localhost:3000'; // Replace with your actual site URL
+const YOUR_SITE_NAME = process.env.YOUR_SITE_NAME || 'AccessibleLearningPortal'; // Replace with your actual site name
 
-// Helper to map user reading level to simplification level for context
 const mapReadingLevelToSimplifyLevel = (readingLevel) => {
-  switch (readingLevel) {
-    case 'basic': return 'easy';
-    case 'intermediate': case 'advanced': return 'moderate';
+  switch (readingLevel?.toLowerCase()) {
+    case 'eli5': return 'eli5';
+    case 'basic': case 'easy': return 'easy';
+    case 'intermediate': case 'moderate': return 'moderate';
+    case 'advanced': return 'advanced';
+    case 'high_school': return 'high_school';
+    case 'college_intro': return 'college_intro';
     default: return 'easy';
   }
 };
 
 exports.askQuestion = async (req, res) => {
   try {
-    const { question, topic } = req.body;
+    const { question, topic, contentId } = req.body; // contentId is optional, topic is slug
     const userId = req.user._id;
 
     if (!question || !topic) {
-      return res.status(400).json({ error: 'Question and topic are required.' });
+      return res.status(400).json({ error: 'Question and topic (slug) are required.' });
+    }
+    if (contentId && !mongoose.Types.ObjectId.isValid(contentId)) {
+        return res.status(400).json({ error: 'Invalid contentId format.' });
     }
 
-    const user = await User.findById(userId).select('preferences');
-    const userReadingLevel = user?.preferences?.readingLevel || 'basic';
-    const preferredSimplifyLevel = mapReadingLevelToSimplifyLevel(userReadingLevel);
 
-    // 1. Fetch context based on the topic
-    const content = await Content.findOne({ topic: topic.toLowerCase().trim() });
-    let contextText = "General knowledge.";
+    const user = await User.findById(userId).select('preferences');
+    const userReadingLevel = user?.preferences?.readingLevel || 'basic'; // Default reading level
+    // Use the new granular map for context fetching, if applicable
+    const preferredSimplifyLevelForContext = mapReadingLevelToSimplifyLevel(userReadingLevel);
+
+    let contentDoc;
+    if (contentId) {
+        contentDoc = await Content.findById(contentId);
+    } else if (topic) { // Fallback to topic slug if no ID
+        contentDoc = await Content.findOne({ topic: topic.toLowerCase().trim() });
+    }
+
+    let contextText = "General knowledge. The student is asking about a topic for which specific context was not found in the database.";
     let contextUsed = 'general_knowledge';
 
-    if (content) {
-        // Prioritize using a simplified version matching user's preference if available
-        const preferredSimplifiedVersion = content.simplifiedVersions.find(v => v.level === preferredSimplifyLevel);
+    if (contentDoc) {
+        const preferredSimplifiedVersion = contentDoc.simplifiedVersions.find(v => v.level === preferredSimplifyLevelForContext);
         if (preferredSimplifiedVersion) {
             contextText = preferredSimplifiedVersion.text;
-            contextUsed = `simplified_${preferredSimplifyLevel}`;
+            contextUsed = `simplified_${preferredSimplifyLevelForContext}`;
         } else {
-            // Fallback to any 'easy' simplified version if preferred not found
-            const easyVersion = content.simplifiedVersions.find(v => v.level === 'easy');
+            // Fallback to any 'easy' or 'eli5' simplified version if preferred not found
+            const easyVersion = contentDoc.simplifiedVersions.find(v => v.level === 'easy' || v.level === 'eli5');
             if (easyVersion) {
                 contextText = easyVersion.text;
-                contextUsed = 'simplified_easy';
+                contextUsed = `simplified_${easyVersion.level}`;
             } else {
-                contextText = content.originalText; // Fallback to original if no suitable simplified version
+                contextText = contentDoc.originalText; // Fallback to original
                 contextUsed = 'original';
             }
         }
     } else {
-         console.warn(`Content not found for topic "${topic}" in QA, using general context.`);
+         console.warn(`QA: Content not found for topic "${topic}" or ID "${contentId}", using general context.`);
     }
 
-    // 2. Construct prompt for LLM, incorporating user preference for clarity
-    let promptIntro = `You are a friendly, patient, and helpful tutor for a neurodivergent student. The student prefers explanations that are very clear, simple, and tailored for a '${userReadingLevel}' reading level.`;
+    // Fetch last 2-3 interactions for context
+    const sessionData = await Session.findOne({ userId: userId }).sort({ 'interactions.timestamp': -1 });
+    let previousInteractionsContext = "";
+    if (sessionData && sessionData.interactions && sessionData.interactions.length > 0) {
+        const relevantInteractions = sessionData.interactions
+            .filter(inter => inter.topic === (contentDoc?.topic || topic)) // Filter by current topic slug
+            .slice(-3); // Get last 3, adjust as needed
+        if (relevantInteractions.length > 0) {
+            previousInteractionsContext = "\nPrevious conversation on this topic:\n" +
+                relevantInteractions.map(inter => `Student: ${inter.question || 'User performed an action.'}\nTutor: ${inter.answer || 'System responded.'}`).join("\n---\n") + // Handle non-question interactions gracefully
+                "\n--- (End of previous conversation) ---\n";
+        }
+    }
+
+    let promptIntro = `You are a friendly, patient, and helpful AI tutor for a neurodivergent student. The student's preferred reading level is '${userReadingLevel}'. Adapt your language complexity accordingly.`;
     if (user?.preferences?.preferredContentMode === 'visual') {
         promptIntro += " The student sometimes benefits from analogies or visualizable descriptions if appropriate for the question."
     }
+    promptIntro += " If the student seems stuck, confused by your explanation, or asks multiple clarifying questions about the same small detail, proactively offer to explain it differently, provide an example, or break it down further. Your goal is to ensure understanding and build confidence."
+
 
     const prompt = `${promptIntro}
-Context on the topic "${topic}":
+${previousInteractionsContext}
+Current Topic Context ("${contentDoc?.topic.replace(/-/g,' ') || topic}"):
 ---
-${contextText.substring(0, 2500)}
+${contextText.substring(0, 3000)}
 ---
-Based *primarily* on the provided context, answer the student's question. If the context is insufficient, you may use your general knowledge but state that you are doing so. If the question is completely outside the context and your general knowledge, clearly say you don't have the information.
-Student's Question: "${question}"
-Answer:`;
+Based *primarily* on the provided context and recent conversation, answer the student's question. If the context is insufficient, you may use your general knowledge but state that you are doing so. If the question is completely outside the context and your general knowledge, clearly say you don't have the information or cannot help with that specific type of query.
+Student's Current Question: "${question}"
+AI Tutor's Answer:`;
 
-    // 3. Call OpenRouter API
+    const startTime = Date.now();
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
         model: OPENROUTER_DEFAULT_MODEL,
         messages: [
-          // System message sets the persona more broadly
-          { role: 'system', content: `You are a friendly, patient, and helpful tutor for a neurodivergent student who needs clear and simple explanations. Adapt your language complexity to a '${userReadingLevel}' reading level.` },
+          { role: 'system', content: `You are an AI tutor for neurodivergent students. Be patient, clear, and adapt to a '${userReadingLevel}' reading level. Be proactive in offering alternative explanations if the student seems to struggle.` },
           { role: 'user', content: prompt }
         ],
-        // max_tokens: 200 // Optionally limit response length
+        max_tokens: 350, // Adjust token limit as needed
+        temperature: 0.5, // Adjust for creativity vs. factuality
       },
       {
         headers: {
@@ -93,15 +122,15 @@ Answer:`;
         }
       }
     );
+    const durationMs = Date.now() - startTime;
 
     if (!response.data || !response.data.choices || response.data.choices.length === 0 || !response.data.choices[0].message) {
         console.error("Invalid response structure from OpenRouter API:", response.data);
-        throw new Error('Invalid response structure from OpenRouter API');
+        return res.status(502).json({ error: 'Received an invalid or empty response from the AI service.' });
     }
 
     const answer = response.data.choices[0].message.content.trim();
 
-    // 4. Log interaction
     await Session.findOneAndUpdate(
         { userId: userId },
         {
@@ -109,10 +138,14 @@ Answer:`;
                 interactions: {
                     question: question,
                     answer: answer,
-                    topic: topic,
-                    contextUsed: contextUsed // Log which context was used
+                    topic: contentDoc?.topic || topic, // Use actual slug from content if available
+                    contextUsed: contextUsed,
+                    modeUsed: 'qa',
+                    durationMs: durationMs,
+                    timestamp: new Date()
                 }
             },
+            $set: { lastActivityAt: new Date() },
             $setOnInsert: { createdAt: new Date() }
         },
         { upsert: true, new: true }
@@ -122,6 +155,14 @@ Answer:`;
 
   } catch (err) {
     console.error("Error in askQuestion:", err.response ? JSON.stringify(err.response.data, null, 2) : err.message, err.stack);
-    res.status(500).json({ error: err.message || 'Failed to get answer' });
+    let statusCode = 500;
+    let errorMessage = err.message || 'Failed to get answer from AI service.';
+    if (err.response) {
+        statusCode = err.response.status || 500;
+        errorMessage = err.response.data?.error?.message || err.response.data?.error || errorMessage;
+        if (statusCode === 401) errorMessage = "AI service authentication failed. Check API key.";
+        if (statusCode === 429) errorMessage = "AI service rate limit exceeded. Please try again later.";
+    }
+    res.status(statusCode).json({ error: errorMessage });
   }
 };

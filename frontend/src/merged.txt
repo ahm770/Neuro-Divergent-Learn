@@ -1355,58 +1355,129 @@ export default ContentPage;
 
 ===== File: /src/pages/DashboardPage.jsx =====
 // src/pages/DashboardPage.jsx
-import React from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
+import { getPublishedContentList } from '../services/contentService';
+
+const LoadingSpinner = ({text = "Loading topics..."}) => (
+  <div className="text-center p-10">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-link)] mx-auto mb-2"></div>
+    <p className="text-[var(--color-text-secondary)]">{text}</p>
+  </div>
+);
+const ErrorMessage = ({ message }) => (
+  <div className="text-center p-4 my-4 text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-300 rounded border border-red-300">
+    Error: {message}
+  </div>
+);
+
 
 const DashboardPage = () => {
   const { user } = useAuth();
+  const [allTopics, setAllTopics] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // Example list of topics - you'd likely fetch this later
-  const topics = ['photosynthesis', 'gravity', 'react-basics', 'python-loops', 'neurodiversity-awareness'];
+  const fetchTopics = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getPublishedContentList({ limit: 200, sortBy: 'topic:asc' }); // Fetch a large number for client-side filtering
+      setAllTopics(data.contents || []);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load topics.');
+      console.error("Dashboard fetch topics error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTopics();
+  }, [fetchTopics]);
+
+  const filteredTopics = useMemo(() => {
+    if (!searchTerm.trim()) return allTopics;
+    const lowerSearchTerm = searchTerm.toLowerCase().trim();
+    return allTopics.filter(content =>
+      content.topic.toLowerCase().replace(/-/g, ' ').includes(lowerSearchTerm) ||
+      (content.tags && content.tags.some(tag => tag.toLowerCase().includes(lowerSearchTerm))) ||
+      (content.originalText && content.originalText.toLowerCase().substring(0, 300).includes(lowerSearchTerm))
+    );
+  }, [allTopics, searchTerm]);
 
   return (
-    <div className="space-y-8"> {/* Added space-y for better vertical rhythm */}
+    <div className="space-y-8">
       <div>
-        <h1>Dashboard</h1> {/* Uses global H1 style */}
+        <h1>Dashboard</h1>
         <p className="text-lg text-[var(--color-text-secondary)]">
           Welcome back, {user?.name || user?.email}!
         </p>
       </div>
 
-      <div className="card"> {/* Using .card class */}
-        <h2 className="text-xl font-semibold mb-4">Available Topics:</h2>
-        {topics.length > 0 ? (
-          <ul className="space-y-3">
-            {topics.map(topic => (
-              <li key={topic}>
+      <div className="card">
+        <h2 className="text-xl font-semibold mb-4">Explore Topics:</h2>
+        <div className="mb-6">
+          <input
+            type="search"
+            placeholder="Search topics, tags, or keywords..."
+            className="form-input-default w-full sm:w-2/3 md:w-1/2"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            aria-label="Search topics"
+          />
+        </div>
+
+        {loading && <LoadingSpinner />}
+        {error && <ErrorMessage message={error} />}
+        
+        {!loading && !error && allTopics.length === 0 && (
+            <p className="text-[var(--color-text-secondary)] text-center py-4">No topics available yet. Content creators can add more!</p>
+        )}
+        {!loading && !error && allTopics.length > 0 && filteredTopics.length === 0 && searchTerm.trim() && (
+            <p className="text-[var(--color-text-secondary)] text-center py-4">No topics match your search: "{searchTerm}". Try a different keyword.</p>
+        )}
+
+        {!loading && !error && filteredTopics.length > 0 && (
+          <ul className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar"> {/* Added max-height and scroll */}
+            {filteredTopics.map(content => (
+              <li key={content._id || content.topic}>
                 <Link
-                  to={`/content/${topic}`}
-                  className="block p-3 rounded-md hover:bg-primary/10 dark:hover:bg-primary-light/10 body-theme-high-contrast:hover:bg-hc-link body-theme-high-contrast:hover:text-hc-background transition-colors duration-150"
+                  to={`/content/${content.topic}`} 
+                  className="block p-3 rounded-md hover:bg-primary/10 dark:hover:bg-primary-light/10 body-theme-high-contrast:hover:bg-hc-link body-theme-high-contrast:hover:text-hc-background transition-colors duration-150 border border-transparent hover:border-[var(--color-border)]"
                 >
                   <span className="font-medium text-base capitalize">
-                    {topic.replace(/-/g, ' ')}
+                    {content.topic.replace(/-/g, ' ')}
                   </span>
-                  <p className="text-sm text-[var(--color-text-secondary)] mt-1">
-                    Explore the fundamentals of {topic.replace(/-/g, ' ')}.
-                  </p>
+                  {content.originalText && (
+                     <p className="text-sm text-[var(--color-text-secondary)] mt-1 line-clamp-2">
+                        {content.originalText}
+                     </p>
+                  )}
+                   {content.tags && content.tags.length > 0 && (
+                    <div className="mt-1.5 space-x-1">
+                        {content.tags.slice(0,3).map(tag => (
+                            <span key={tag} className="text-xs bg-gray-200 dark:bg-slate-700 text-[var(--color-text-secondary)] px-1.5 py-0.5 rounded-full">{tag}</span>
+                        ))}
+                        {content.tags.length > 3 && <span className="text-xs text-[var(--color-text-secondary)]">+ {content.tags.length - 3} more</span>}
+                    </div>
+                   )}
                 </Link>
               </li>
             ))}
           </ul>
-        ) : (
-          <p className="text-[var(--color-text-secondary)]">No topics available yet. Check back soon!</p>
         )}
       </div>
 
-      {/* Example of another card for quick actions or stats */}
       <div className="grid md:grid-cols-2 gap-6">
         <div className="card">
             <h3 className="text-lg font-semibold mb-3">Your Preferences</h3>
             <p className="text-sm text-[var(--color-text-secondary)] mb-4">
                 Customize your learning experience to suit your needs.
             </p>
-            <Link to="/profile" className="button-secondary text-sm"> {/* Using generic button class */}
+            <Link to="/profile" className="button-secondary text-sm">
                 Go to Profile Settings
             </Link>
         </div>
@@ -1667,8 +1738,6 @@ const ErrorAlert = ({ message }) => (
 const Pagination = ({ currentPage, totalPages, onPageChange, disabled }) => {
   if (totalPages <= 1) return null;
   const pageNumbers = [];
-  
-  // Logic for limited page numbers (e.g., first, last, current +/- 2)
   const maxPagesToShow = 5;
   let startPage, endPage;
   if (totalPages <= maxPagesToShow) {
@@ -1686,73 +1755,19 @@ const Pagination = ({ currentPage, totalPages, onPageChange, disabled }) => {
       endPage = currentPage + Math.floor(maxPagesToShow / 2);
     }
   }
-
   for (let i = startPage; i <= endPage; i++) {
     pageNumbers.push(i);
   }
-
   return (
     <nav aria-label="Content pagination" className="mt-6 flex justify-center">
       <ul className="inline-flex items-center -space-x-px">
-        <li>
-          <button
-            onClick={() => onPageChange(1)}
-            disabled={disabled || currentPage === 1}
-            className="px-3 py-2 ml-0 leading-tight text-gray-500 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
-          >
-            First
-          </button>
-        </li>
-        <li>
-          <button
-            onClick={() => onPageChange(currentPage - 1)}
-            disabled={disabled || currentPage === 1}
-            className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
-          >
-            Previous
-          </button>
-        </li>
-        {startPage > 1 && (
-            <li>
-                <span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span>
-            </li>
-        )}
-        {pageNumbers.map(number => (
-          <li key={number}>
-            <button
-              onClick={() => onPageChange(number)}
-              disabled={disabled}
-              className={`px-3 py-2 leading-tight border ${ currentPage === number 
-                ? 'text-primary-dark bg-primary/20 border-primary-dark dark:bg-primary-light/30 dark:text-white dark:border-primary-light font-semibold' 
-                : 'text-gray-500 bg-white border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white'}`}
-            >
-              {number}
-            </button>
-          </li>
-        ))}
-        {endPage < totalPages && (
-             <li>
-                <span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span>
-            </li>
-        )}
-        <li>
-          <button
-            onClick={() => onPageChange(currentPage + 1)}
-            disabled={disabled || currentPage === totalPages}
-            className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
-          >
-            Next
-          </button>
-        </li>
-         <li>
-          <button
-            onClick={() => onPageChange(totalPages)}
-            disabled={disabled || currentPage === totalPages}
-            className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 rounded-r-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50"
-          >
-            Last
-          </button>
-        </li>
+        <li><button onClick={() => onPageChange(1)} disabled={disabled || currentPage === 1} className="px-3 py-2 ml-0 leading-tight text-gray-500 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">First</button></li>
+        <li><button onClick={() => onPageChange(currentPage - 1)} disabled={disabled || currentPage === 1} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Prev</button></li>
+        {startPage > 1 && <li><span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span></li>}
+        {pageNumbers.map(number => (<li key={number}><button onClick={() => onPageChange(number)} disabled={disabled} className={`px-3 py-2 leading-tight border ${ currentPage === number ? 'text-primary-dark bg-primary/20 border-primary-dark dark:bg-primary-light/30 dark:text-white dark:border-primary-light font-semibold' : 'text-gray-500 bg-white border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white'}`}>{number}</button></li>))}
+        {endPage < totalPages && <li><span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span></li>}
+        <li><button onClick={() => onPageChange(currentPage + 1)} disabled={disabled || currentPage === totalPages} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Next</button></li>
+        <li><button onClick={() => onPageChange(totalPages)} disabled={disabled || currentPage === totalPages} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 rounded-r-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Last</button></li>
       </ul>
     </nav>
   );
@@ -1766,32 +1781,30 @@ const AdminContentListPage = () => {
   
   const location = useLocation();
   const navigate = useNavigate();
+  const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
   
-  const parseQueryParams = () => {
+  const parseQueryParams = useCallback(() => {
     const params = new URLSearchParams(location.search);
     return {
       search: params.get('search') || '',
       tag: params.get('tag') || '',
-      creatorId: params.get('creatorId') || '', // Example: if you add creator filter
       sortBy: params.get('sortBy') || 'createdAt:desc',
       page: parseInt(params.get('page')) || 1,
       limit: parseInt(params.get('limit')) || 10,
     };
-  };
+  }, [location.search]);
 
   const [activeFilters, setActiveFilters] = useState(parseQueryParams());
 
+  useEffect(() => {
+    setActiveFilters(parseQueryParams());
+  }, [parseQueryParams]);
 
-  const fetchContents = useCallback(async () => {
+  const fetchContents = useCallback(async (filtersToFetch) => {
     setLoading(true);
     setError(null);
-    
-    const paramsToFetch = { ...activeFilters };
-    // Remove empty filter values before sending to API
-    Object.keys(paramsToFetch).forEach(key => (paramsToFetch[key] === '' || paramsToFetch[key] === null) && delete paramsToFetch[key]);
-
     try {
-      const data = await getPublishedContentList(paramsToFetch);
+      const data = await getPublishedContentList(filtersToFetch);
       setContentData(data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to fetch content list.');
@@ -1799,19 +1812,32 @@ const AdminContentListPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [activeFilters]); // Depend on the single state object for filters/pagination
+  }, []);
 
   useEffect(() => {
-    // Update URL when activeFilters change
-    const newSearch = new URLSearchParams(activeFilters).toString();
-    navigate(`${location.pathname}?${newSearch}`, { replace: true });
-    fetchContents();
-  }, [activeFilters, fetchContents, navigate, location.pathname]);
+    const paramsForUrl = new URLSearchParams();
+    Object.entries(activeFilters).forEach(([key, value]) => {
+      if (value) { // Only add if value is not empty/null/undefined
+        if (key === 'page' && value === 1 && !paramsForUrl.has('page')) { /* skip if default */ }
+        else if (key === 'limit' && value === 10 && !paramsForUrl.has('limit')) { /* skip if default */ }
+        else if (key === 'sortBy' && value === 'createdAt:desc' && !paramsForUrl.has('sortBy')) { /* skip if default */ }
+        else {
+          paramsForUrl.set(key, value);
+        }
+      }
+    });
+    const newSearchString = paramsForUrl.toString();
+    
+    if (location.search.substring(1) !== newSearchString) {
+        navigate(`${location.pathname}?${newSearchString}`, { replace: true });
+    }
+    fetchContents(activeFilters);
+  }, [activeFilters, fetchContents, navigate, location.pathname, location.search]);
 
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
-    setActiveFilters(prev => ({ ...prev, [name]: value, page: 1 })); // Reset page on filter change
+    setActiveFilters(prev => ({ ...prev, [name]: value.trim(), page: 1 }));
   };
 
   const handleSortChange = (e) => {
@@ -1819,7 +1845,7 @@ const AdminContentListPage = () => {
   };
   
   const handlePageChange = (pageNumber) => {
-    if (pageNumber >= 1 && pageNumber <= contentData.totalPages) {
+    if (pageNumber >= 1 && pageNumber <= contentData.totalPages && pageNumber !== activeFilters.page) {
       setActiveFilters(prev => ({ ...prev, page: pageNumber }));
     }
   };
@@ -1829,32 +1855,34 @@ const AdminContentListPage = () => {
   }
 
   const handleDelete = async (contentId, topic) => {
-    if (window.confirm(`Are you sure you want to delete the topic "${topic}"? This action cannot be undone.`)) {
+    if (window.confirm(`Are you sure you want to delete the topic "${topic.replace(/-/g, ' ')}"? This action cannot be undone.`)) {
       try {
         await deleteContent(contentId);
-        toast.success(`Topic "${topic}" deleted successfully.`);
-        // Re-fetch content, considering current page might become invalid if last item deleted
-        if (contentData.contents.length === 1 && activeFilters.page > 1) {
-            setActiveFilters(prev => ({ ...prev, page: prev.page - 1 }));
-        } else {
-            fetchContents(); 
-        }
+        toast.success(`Topic "${topic.replace(/-/g, ' ')}" deleted successfully.`);
+        const newPage = (contentData.contents.length === 1 && activeFilters.page > 1) ? activeFilters.page - 1 : activeFilters.page;
+        // Trigger refetch by updating filters which useEffect listens to
+        setActiveFilters(prev => ({ ...prev, page: newPage, _triggerRefetch: Date.now() })); // Add a dummy prop to ensure state change
       } catch (err) {
-        const deleteError = err.response?.data?.error || `Failed to delete topic "${topic}".`;
-        setError(deleteError); // Still useful for a persistent error message
+        const deleteError = err.response?.data?.error || `Failed to delete topic "${topic.replace(/-/g, ' ')}".`;
+        setError(deleteError); 
         toast.error(deleteError);
       }
     }
   };
-
-  const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
 
   if (loading && contentData.contents.length === 0 && activeFilters.page === 1) return <LoadingMessage />;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-semibold">Manage Content</h1>
+        <div className="flex items-center gap-2">
+           <Link to={basePath} className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors" title={`Back to ${basePath === '/admin' ? 'Admin' : 'Creator'} Dashboard`}>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-[var(--color-text-secondary)]">
+              <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.56l2.72 2.72a.75.75 0 1 1-1.06 1.06l-4-4a.75.75 0 0 1 0-1.06l4-4a.75.75 0 0 1 1.06 1.06L5.56 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+            </svg>
+          </Link>
+          <h1 className="text-2xl font-semibold">Manage Content</h1>
+        </div>
         <Link to={`${basePath}/content/create`} className="button-primary text-sm whitespace-nowrap">
           Create New Content
         </Link>
@@ -1865,7 +1893,7 @@ const AdminContentListPage = () => {
       <div className="card p-4 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
-              <label htmlFor="search-content" className="form-label-default">Search Topic/Tag</label>
+              <label htmlFor="search-content" className="form-label-default">Search Topic/Tag/Text</label>
               <input
                 type="search" name="search" id="search-content"
                 placeholder="Enter keyword..."
@@ -1884,14 +1912,6 @@ const AdminContentListPage = () => {
                 onChange={handleFilterChange}
               />
             </div>
-            {/* Add Creator Filter if needed by fetching list of creators */}
-            {/* <div>
-                <label htmlFor="creator-filter" className="form-label-default">Filter by Creator</label>
-                <select name="creatorId" id="creator-filter" value={activeFilters.creatorId} onChange={handleFilterChange} className="form-input-default">
-                    <option value="">All Creators</option>
-                    {/* Populate with creators */}
-                {/* </select>
-            </div> */}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -1917,12 +1937,12 @@ const AdminContentListPage = () => {
         </div>
       </div>
 
-      {loading && <div className="p-4 text-center text-sm text-[var(--color-text-secondary)] animate-pulse">Updating list...</div>}
+      {loading && contentData.contents.length === 0 && <div className="p-4 text-center text-sm text-[var(--color-text-secondary)] animate-pulse">Updating list...</div>}
 
       {!loading && contentData.contents.length === 0 && (
         <div className="card text-center py-8">
             <p className="text-[var(--color-text-secondary)]">
-              {activeFilters.search || activeFilters.tag ? `No content matches your criteria.` : "No content found. Get started by creating some!"}
+              {(activeFilters.search || activeFilters.tag) ? `No content matches your criteria.` : "No content found. Get started by creating some!"}
             </p>
         </div>
       )}
@@ -2005,14 +2025,14 @@ const ErrorAlert = ({ message }) => (
 
 const AdminCreateContentPage = () => {
   const [formData, setFormData] = useState({
-    topic: '', // This will be the human-readable title, slug generated on backend
+    topic: '', 
     originalText: '',
   });
   const [tags, setTags] = useState([]);
   const [imageUrls, setImageUrls] = useState([]);
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null); // For form-level persistent errors
+  const [error, setError] = useState(null);
   const navigate = useNavigate();
   const basePath = window.location.pathname.startsWith('/admin') ? '/admin' : '/creator';
 
@@ -2025,16 +2045,15 @@ const AdminCreateContentPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    setError(null); // Clear previous form error
-    // toast.dismiss(); // Clear existing toasts
+    setError(null); 
 
     const contentData = {
       ...formData,
-      topic: formData.topic.trim(), // Send human-readable title
+      topic: formData.topic.trim(), 
       tags: tags,
-      imageUrls: imageUrls.filter(url => url && url.trim() !== ''), // Filter out empty strings
-      videoExplainers: [], // Initialize as empty, can be added in edit
-      audioNarrations: [], // Initialize as empty, can be added in edit
+      imageUrls: imageUrls.filter(url => url && url.trim() !== ''),
+      videoExplainers: [], 
+      audioNarrations: [], 
     };
 
     if (!contentData.topic || !contentData.originalText) {
@@ -2045,12 +2064,12 @@ const AdminCreateContentPage = () => {
     }
 
     try {
-      await createContent(contentData);
-      toast.success('Content created successfully!');
-      navigate(`${basePath}/content`); // Navigate back to the list for the current role
+      const newContent = await createContent(contentData); // Backend returns the created content
+      toast.success(`Content "${newContent.topic.replace(/-/g,' ')}" created successfully!`);
+      navigate(`${basePath}/content/edit/${newContent._id}`); // Navigate to edit page of new content
     } catch (err) {
       const errMsg = err.response?.data?.error || 'Failed to create content.';
-      setError(errMsg); // Set form error for display
+      setError(errMsg); 
       toast.error(errMsg);
     } finally {
       setLoading(false);
@@ -2059,10 +2078,14 @@ const AdminCreateContentPage = () => {
 
   return (
     <div className="space-y-6">
-      <Link to={`${basePath}/content`} className="text-sm inline-block mb-2 hover:underline text-[var(--color-link)]">
-        ← Back to Content List
-      </Link>
-      <h1 className="text-2xl font-semibold">Create New Content</h1>
+        <div className="flex items-center gap-2 mb-2">
+          <Link to={`${basePath}/content`} className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors" title="Back to Content List">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-[var(--color-text-secondary)]">
+              <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.56l2.72 2.72a.75.75 0 1 1-1.06 1.06l-4-4a.75.75 0 0 1 0-1.06l4-4a.75.75 0 0 1 1.06 1.06L5.56 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+            </svg>
+          </Link>
+          <h1 className="text-2xl font-semibold">Create New Content</h1>
+        </div>
 
       <form onSubmit={handleSubmit} className="card max-w-2xl mx-auto p-6 md:p-8">
         {error && <ErrorAlert message={error} />}
@@ -2493,8 +2516,8 @@ export default AdminEditContentPage;
 
 ===== File: /src/pages/admin/AdminUserManagementPage.jsx =====
 // src/pages/admin/AdminUserManagementPage.jsx
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom'; // Added useLocation, useNavigate
+import React, { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { getAllUsersAdmin, updateUserRoleAdmin, deleteUserAdmin } from '../../services/userService';
 import { useAuth } from '../../contexts/AuthContext';
 import { toast } from 'react-toastify';
@@ -2504,35 +2527,23 @@ const ErrorAlert = ({ message }) => (
     <div className="my-4 p-3 rounded text-sm bg-red-100 border border-red-300 text-red-700 dark:bg-red-900/20 dark:border-red-700 dark:text-red-300 body-theme-high-contrast:bg-hc-background body-theme-high-contrast:border-hc-link body-theme-high-contrast:text-hc-link" role="alert">{message}</div>
 );
 
-// Reusable Pagination Component (same as in AdminContentListPage, could be common)
 const Pagination = ({ currentPage, totalPages, onPageChange, disabled }) => {
   if (totalPages <= 1) return null;
   const pageNumbers = [];
   const maxPagesToShow = 5;
   let startPage, endPage;
-  if (totalPages <= maxPagesToShow) {
-    startPage = 1;
-    endPage = totalPages;
-  } else {
-    if (currentPage <= Math.ceil(maxPagesToShow / 2)) {
-      startPage = 1;
-      endPage = maxPagesToShow;
-    } else if (currentPage + Math.floor(maxPagesToShow / 2) >= totalPages) {
-      startPage = totalPages - maxPagesToShow + 1;
-      endPage = totalPages;
-    } else {
-      startPage = currentPage - Math.floor(maxPagesToShow / 2);
-      endPage = currentPage + Math.floor(maxPagesToShow / 2);
-    }
+  if (totalPages <= maxPagesToShow) { startPage = 1; endPage = totalPages; } 
+  else {
+    if (currentPage <= Math.ceil(maxPagesToShow / 2)) { startPage = 1; endPage = maxPagesToShow; } 
+    else if (currentPage + Math.floor(maxPagesToShow / 2) >= totalPages) { startPage = totalPages - maxPagesToShow + 1; endPage = totalPages; } 
+    else { startPage = currentPage - Math.floor(maxPagesToShow / 2); endPage = currentPage + Math.floor(maxPagesToShow / 2); }
   }
-  for (let i = startPage; i <= endPage; i++) {
-    pageNumbers.push(i);
-  }
+  for (let i = startPage; i <= endPage; i++) { pageNumbers.push(i); }
   return (
     <nav aria-label="Users pagination" className="mt-6 flex justify-center">
       <ul className="inline-flex items-center -space-x-px">
         <li><button onClick={() => onPageChange(1)} disabled={disabled || currentPage === 1} className="px-3 py-2 ml-0 leading-tight text-gray-500 bg-white border border-gray-300 rounded-l-lg hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">First</button></li>
-        <li><button onClick={() => onPageChange(currentPage - 1)} disabled={disabled || currentPage === 1} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Previous</button></li>
+        <li><button onClick={() => onPageChange(currentPage - 1)} disabled={disabled || currentPage === 1} className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white disabled:opacity-50">Prev</button></li>
         {startPage > 1 && <li><span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span></li>}
         {pageNumbers.map(number => (<li key={number}><button onClick={() => onPageChange(number)} disabled={disabled} className={`px-3 py-2 leading-tight border ${ currentPage === number ? 'text-primary-dark bg-primary/20 border-primary-dark dark:bg-primary-light/30 dark:text-white dark:border-primary-light font-semibold' : 'text-gray-500 bg-white border-gray-300 hover:bg-gray-100 hover:text-gray-700 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white'}`}>{number}</button></li>))}
         {endPage < totalPages && <li><span className="px-3 py-2 leading-tight text-gray-500 bg-white border border-gray-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">...</span></li>}
@@ -2553,7 +2564,7 @@ const AdminUserManagementPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const parseUserQueryParams = () => {
+  const parseUserQueryParams = useCallback(() => {
     const params = new URLSearchParams(location.search);
     return {
       search: params.get('search') || '',
@@ -2562,38 +2573,50 @@ const AdminUserManagementPage = () => {
       page: parseInt(params.get('page')) || 1,
       limit: parseInt(params.get('limit')) || 10,
     };
-  };
+  }, [location.search]);
+
   const [activeUserFilters, setActiveUserFilters] = useState(parseUserQueryParams());
 
+  useEffect(() => {
+    setActiveUserFilters(parseUserQueryParams());
+  }, [parseUserQueryParams]);
 
-  const fetchUsers = useCallback(async () => {
+  const fetchUsers = useCallback(async (filtersToFetch) => {
     setLoading(true);
     setError(null);
-    const paramsToFetch = { ...activeUserFilters };
-    Object.keys(paramsToFetch).forEach(key => (paramsToFetch[key] === '' || paramsToFetch[key] === null) && delete paramsToFetch[key]);
-
     try {
-      const data = await getAllUsersAdmin(paramsToFetch);
+      const data = await getAllUsersAdmin(filtersToFetch);
       setUserData(data);
     } catch (err) {
       const errorMsg = err.response?.data?.error || 'Failed to fetch users.';
       setError(errorMsg);
-      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
-  }, [activeUserFilters]);
+  }, []);
 
   useEffect(() => {
-    const newSearch = new URLSearchParams(activeUserFilters).toString();
-    navigate(`${location.pathname}?${newSearch}`, { replace: true });
-    fetchUsers();
-  }, [activeUserFilters, fetchUsers, navigate, location.pathname]);
+    const paramsForUrl = new URLSearchParams();
+    Object.entries(activeUserFilters).forEach(([key, value]) => {
+      if (value) { 
+        if (key === 'page' && value === 1 && !paramsForUrl.has('page')) { /* skip */ }
+        else if (key === 'limit' && value === 10 && !paramsForUrl.has('limit')) { /* skip */ }
+        else if (key === 'sortBy' && value === 'createdAt:desc' && !paramsForUrl.has('sortBy')) { /* skip */ }
+        else { paramsForUrl.set(key, value); }
+      }
+    });
+    const newSearchString = paramsForUrl.toString();
+
+    if (location.search.substring(1) !== newSearchString) {
+      navigate(`${location.pathname}?${newSearchString}`, { replace: true });
+    }
+    fetchUsers(activeUserFilters);
+  }, [activeUserFilters, fetchUsers, navigate, location.pathname, location.search]);
 
 
   const handleUserFilterChange = (e) => {
     const { name, value } = e.target;
-    setActiveUserFilters(prev => ({ ...prev, [name]: value, page: 1 }));
+    setActiveUserFilters(prev => ({ ...prev, [name]: value.trim(), page: 1 }));
   };
 
   const handleUserSortChange = (e) => {
@@ -2601,7 +2624,7 @@ const AdminUserManagementPage = () => {
   };
 
   const handleUserPageChange = (pageNumber) => {
-     if (pageNumber >= 1 && pageNumber <= userData.totalPages) {
+     if (pageNumber >= 1 && pageNumber <= userData.totalPages && pageNumber !== activeUserFilters.page) {
       setActiveUserFilters(prev => ({ ...prev, page: pageNumber }));
     }
   };
@@ -2616,12 +2639,13 @@ const AdminUserManagementPage = () => {
         const adminUsers = userData.users.filter(u => u.role === 'admin');
         if (adminUsers.length <= 1) {
             toast.error("Cannot remove the last admin's role.");
+            // Revert UI change if select is directly bound
+            setTimeout(() => fetchUsers(activeUserFilters), 0); // Re-fetch to revert
             return;
         }
     }
     try {
       const updatedUser = await updateUserRoleAdmin(userId, newRole);
-      // Optimistic update or re-fetch:
       setUserData(prevData => ({
           ...prevData,
           users: prevData.users.map(u => u._id === userId ? { ...u, role: updatedUser.role } : u)
@@ -2629,6 +2653,7 @@ const AdminUserManagementPage = () => {
       toast.success('User role updated successfully!');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Failed to update role.');
+      setTimeout(() => fetchUsers(activeUserFilters), 0); // Re-fetch to revert
     }
   };
 
@@ -2641,11 +2666,8 @@ const AdminUserManagementPage = () => {
       try {
         await deleteUserAdmin(userIdToDelete);
         toast.success(`User "${userName || 'User'}" deleted successfully.`);
-        if (userData.users.length === 1 && activeUserFilters.page > 1) {
-            setActiveUserFilters(prev => ({ ...prev, page: prev.page - 1 }));
-        } else {
-            fetchUsers();
-        }
+        const newPage = (userData.users.length === 1 && activeUserFilters.page > 1) ? activeUserFilters.page - 1 : activeUserFilters.page;
+        setActiveUserFilters(prev => ({ ...prev, page: newPage, _triggerRefetch: Date.now() }));
       } catch (err) {
         toast.error(err.response?.data?.error || 'Failed to delete user.');
       }
@@ -2658,10 +2680,14 @@ const AdminUserManagementPage = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-semibold">User Management</h1>
-         <Link to="/admin" className="text-sm hover:underline text-[var(--color-link)]">
-            ← Back to Admin Dashboard
-        </Link>
+        <div className="flex items-center gap-2">
+           <Link to="/admin" className="p-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors" title="Back to Admin Dashboard">
+             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-[var(--color-text-secondary)]">
+               <path fillRule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.56l2.72 2.72a.75.75 0 1 1-1.06 1.06l-4-4a.75.75 0 0 1 0-1.06l4-4a.75.75 0 0 1 1.06 1.06L5.56 9.25H16.25A.75.75 0 0 1 17 10Z" clipRule="evenodd" />
+             </svg>
+           </Link>
+          <h1 className="text-2xl font-semibold">User Management</h1>
+        </div>
       </div>
       
       {error && <ErrorAlert message={error} />}
@@ -2695,6 +2721,7 @@ const AdminUserManagementPage = () => {
                 <option value="name:asc">Name (A-Z)</option>
                 <option value="name:desc">Name (Z-A)</option>
                 <option value="email:asc">Email (A-Z)</option>
+                <option value="email:desc">Email (Z-A)</option>
               </select>
             </div>
         </div>
@@ -2709,13 +2736,13 @@ const AdminUserManagementPage = () => {
         </div>
       </div>
 
-      {loading && <div className="p-4 text-center text-sm text-[var(--color-text-secondary)] animate-pulse">Updating list...</div>}
+      {loading && userData.users.length === 0 && <div className="p-4 text-center text-sm text-[var(--color-text-secondary)] animate-pulse">Updating list...</div>}
 
 
       {!loading && userData.users.length === 0 && (
         <div className="card text-center py-8">
             <p className="text-[var(--color-text-secondary)]">
-                {activeUserFilters.search || activeUserFilters.role ? 'No users match your criteria.' : 'No users found.'}
+                {(activeUserFilters.search || activeUserFilters.role) ? 'No users match your criteria.' : 'No users found.'}
             </p>
         </div>
       )}
@@ -2743,6 +2770,7 @@ const AdminUserManagementPage = () => {
                       onChange={(e) => handleRoleChange(user._id, e.target.value)}
                       className="form-input-default !py-1 !px-2 !text-xs !w-auto disabled:opacity-70 disabled:cursor-not-allowed"
                       disabled={currentUser._id === user._id && user.role === 'admin' && userData.users.filter(u=>u.role === 'admin').length <=1 }
+                      title={currentUser._id === user._id && user.role === 'admin' && userData.users.filter(u=>u.role === 'admin').length <=1 ? "Cannot change own role if last admin" : "Change user role"}
                     >
                       <option value="user">User</option>
                       <option value="creator">Creator</option>
@@ -2755,6 +2783,7 @@ const AdminUserManagementPage = () => {
                       onClick={() => handleDeleteUser(user._id, user.name || user.email)}
                       className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 body-theme-high-contrast:text-red-400 body-theme-high-contrast:hover:text-red-300 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={currentUser._id === user._id}
+                      title={currentUser._id === user._id ? "Cannot delete own account" : "Delete user"}
                     >
                       Delete
                     </button>
@@ -2946,7 +2975,13 @@ export const findVideoExplainers = async (contentId, query) => {
 };
 
 export const getPublishedContentList = async (params = {}) => {
-  const response = await api.get('/content', { params }); 
+  const cleanParams = {};
+  for (const key in params) {
+    if (params[key] !== '' && params[key] !== null && params[key] !== undefined) {
+      cleanParams[key] = params[key];
+    }
+  }
+  const response = await api.get('/content', { params: cleanParams }); 
   return response.data; 
 };
 
@@ -2957,12 +2992,12 @@ export const getContentByIdForEditing = async (contentId) => {
 
 export const createContent = async (contentData) => {
   const response = await api.post('/content/create', contentData);
-  return response.data;
+  return response.data; // Ensure this returns the created content object with _id
 };
 
 export const updateContent = async (contentId, contentData) => {
   const response = await api.put(`/content/${contentId}`, contentData);
-  return response.data;
+  return response.data; // Ensure this returns the updated content object
 };
 
 export const deleteContent = async (contentId) => {
@@ -2974,8 +3009,14 @@ export const deleteContent = async (contentId) => {
 // src/services/userService.js
 import api from './api';
 
-export const getAllUsersAdmin = async () => {
-  const response = await api.get('/users');
+export const getAllUsersAdmin = async (params = {}) => {
+  const cleanParams = {};
+  for (const key in params) {
+    if (params[key] !== '' && params[key] !== null && params[key] !== undefined) {
+      cleanParams[key] = params[key];
+    }
+  }
+  const response = await api.get('/users', { params: cleanParams });
   return response.data;
 };
 

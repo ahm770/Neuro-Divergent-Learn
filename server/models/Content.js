@@ -1,9 +1,10 @@
 const mongoose = require('mongoose');
 
 const simplifiedSchema = new mongoose.Schema({
-  level: { 
+  level: {
     type: String,
-    enum: ['easy', 'moderate', 'advanced'],
+    // Updated enum for granular simplification
+    enum: ['eli5', 'easy', 'moderate', 'advanced', 'high_school', 'college_intro'],
     required: true
   },
   text: { type: String },
@@ -53,11 +54,14 @@ const contentSchema = new mongoose.Schema({
   media: {
     imageUrls: [String],
   },
-  createdBy: { 
+  learningObjectives: [String], // NEW: for educators to specify
+  keyVocabulary: [String], // NEW: for educators
+
+  createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   },
-  lastUpdatedBy: { 
+  lastUpdatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
