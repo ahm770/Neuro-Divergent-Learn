@@ -255,9 +255,11 @@ exports.updatePreferences = async (req, res) => {
 // ===== File: /controllers/contentController.js =====
 const Content = require('../models/Content');
 const User = require('../models/User');
+const UserLearningProgress = require('../models/UserLearningProgress');
 const { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } = require("@google/generative-ai");
-const logAction = require('../utils/auditLogger'); // Import the logger
-const crypto = require('crypto'); // For hashing text in audit
+const logAction = require('../utils/auditLogger');
+const crypto = require('crypto');
+const mongoose = require('mongoose');
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 let genAI;
@@ -270,35 +272,43 @@ if (GOOGLE_API_KEY) {
     console.log("Google Generative AI SDK initialized successfully with gemini-1.5-flash-latest.");
   } catch (error) {
     console.error("FATAL: Failed to initialize Google Generative AI SDK:", error.message);
+    // Not exiting process here, but features will be disabled.
   }
 } else {
   console.warn("Warning: GOOGLE_API_KEY is not defined. Google AI features will be disabled.");
 }
 
 const mapReadingLevelToPromptDescription = (readingLevel) => {
-  switch (readingLevel) {
-    case 'basic': return 'an easy-to-understand';
-    case 'intermediate': return 'a moderately detailed';
+  switch (readingLevel?.toLowerCase()) {
+    case 'eli5': return 'extremely simple, explain-like-I\'m-5';
+    case 'basic': case 'easy': return 'an easy-to-understand';
+    case 'intermediate': case 'moderate': return 'a moderately detailed';
     case 'advanced': return 'an advanced and comprehensive';
+    case 'high_school': return 'a high-school student level';
+    case 'college_intro': return 'a college introductory level';
     default: return 'an easy-to-understand';
   }
 };
+
 const mapReadingLevelToCacheKey = (readingLevel) => {
-  switch (readingLevel) {
-    case 'basic': return 'easy';
-    case 'intermediate': return 'moderate';
+  switch (readingLevel?.toLowerCase()) {
+    case 'eli5': return 'eli5';
+    case 'basic': case 'easy': return 'easy';
+    case 'intermediate': case 'moderate': return 'moderate';
     case 'advanced': return 'advanced';
+    case 'high_school': return 'high_school';
+    case 'college_intro': return 'college_intro';
     default: return 'easy';
   }
 };
 
 const createContent = async (req, res) => {
   try {
-    const { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations } = req.body;
+    const { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations, learningObjectives, keyVocabulary } = req.body;
     if (!topic || !originalText) {
       return res.status(400).json({ error: 'Topic and originalText are required.' });
     }
-    const topicSlug = topic.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, ''); // Sanitize slug
+    const topicSlug = topic.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
     const existingContent = await Content.findOne({ topic: topicSlug });
     if (existingContent) {
       return res.status(400).json({ error: `Content for topic "${topic}" already exists (slug: ${topicSlug}).` });
@@ -310,20 +320,24 @@ const createContent = async (req, res) => {
       media: { imageUrls: imageUrls || [] },
       videoExplainers: videoExplainers || [],
       audioNarrations: audioNarrations || [],
-      createdBy: req.user._id 
+      learningObjectives: learningObjectives || [],
+      keyVocabulary: keyVocabulary || [],
+      createdBy: req.user._id
     });
     await newContent.save();
-    
+
     await logAction(
-      req.user.id, 
-      'CREATE_CONTENT', 
-      'Content', 
-      newContent._id, 
-      { 
-        topicSlug: newContent.topic, 
+      req.user.id,
+      'CREATE_CONTENT',
+      'Content',
+      newContent._id,
+      {
+        topicSlug: newContent.topic,
         titleFromUser: topic,
         tags: newContent.tags,
-        charCount: originalText.length 
+        charCount: originalText.length,
+        hasLearningObjectives: (learningObjectives && learningObjectives.length > 0),
+        hasKeyVocabulary: (keyVocabulary && keyVocabulary.length > 0),
       },
       req.ip
     );
@@ -348,9 +362,11 @@ const getAllContent = async (req, res) => {
     if (req.query.search && req.query.search.trim() !== '') {
       const searchRegex = new RegExp(req.query.search.trim(), 'i');
       query.$or = [
-        { topic: searchRegex }, // Searches the slug
+        { topic: searchRegex },
         { originalText: searchRegex },
-        { tags: searchRegex }
+        { tags: searchRegex },
+        { learningObjectives: searchRegex },
+        { keyVocabulary: searchRegex }
       ];
     }
     if (req.query.tag && req.query.tag.trim() !== '') {
@@ -374,7 +390,7 @@ const getAllContent = async (req, res) => {
       .sort(sortOptions)
       .skip(skip)
       .limit(limit)
-      .select('topic tags originalText createdAt createdBy lastUpdatedBy updatedAt'); // Ensure originalText is selected for dashboard snippets
+      .select('topic tags originalText createdAt createdBy lastUpdatedBy updatedAt learningObjectives keyVocabulary');
 
     const totalContents = await Content.countDocuments(query);
     const totalPages = Math.ceil(totalContents / limit);
@@ -393,6 +409,9 @@ const getAllContent = async (req, res) => {
 
 const getContentById = async (req, res) => {
     try {
+        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+            return res.status(400).json({ message: 'Invalid content ID format.' });
+        }
         const content = await Content.findById(req.params.id)
             .populate('createdBy', 'name email')
             .populate('lastUpdatedBy', 'name email');
@@ -402,30 +421,23 @@ const getContentById = async (req, res) => {
         res.json(content);
     } catch (err) {
         console.error("Error fetching content by ID:", err.message, err.stack);
-        if (err.kind === 'ObjectId') {
-             return res.status(400).json({ message: 'Invalid content ID format.' });
-        }
         res.status(500).json({ error: 'Failed to retrieve content' });
     }
 };
 
 const updateContent = async (req, res) => {
   try {
-    const { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations } = req.body;
+    const { topic, originalText, tags, imageUrls, videoExplainers, audioNarrations, learningObjectives, keyVocabulary } = req.body;
     const contentId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(contentId)) {
+        return res.status(400).json({ message: 'Invalid content ID format.' });
+    }
     let content = await Content.findById(contentId);
     if (!content) {
       return res.status(404).json({ error: 'Content not found.' });
     }
-    
-    const oldValuesSummary = {
-        topic: content.topic,
-        originalTextHash: crypto.createHash('md5').update(content.originalText || "").digest('hex'),
-        tags: [...content.tags],
-        imageCount: content.media?.imageUrls?.length || 0,
-        videoCount: content.videoExplainers?.length || 0,
-        audioCount: content.audioNarrations?.length || 0,
-    };
+
     const changes = {};
 
     const newSlug = topic ? topic.toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '') : content.topic;
@@ -433,8 +445,8 @@ const updateContent = async (req, res) => {
         changes.topic = { old: content.topic, new: newSlug };
         content.topic = newSlug;
     }
-    if (originalText && content.originalText !== originalText) {
-        changes.originalText = "modified"; // Just indicate change, don't log full text
+    if (originalText !== undefined && content.originalText !== originalText) {
+        changes.originalText = "modified";
         content.originalText = originalText;
     }
     if (tags !== undefined && JSON.stringify(content.tags.slice().sort()) !== JSON.stringify(tags.slice().sort())) {
@@ -445,7 +457,7 @@ const updateContent = async (req, res) => {
         changes.imageUrls = "modified";
         content.media.imageUrls = imageUrls;
     }
-    if (videoExplainers !== undefined && JSON.stringify(content.videoExplainers) !== JSON.stringify(videoExplainers)) { // Simplistic comparison
+    if (videoExplainers !== undefined && JSON.stringify(content.videoExplainers) !== JSON.stringify(videoExplainers)) {
         changes.videoExplainers = "modified";
         content.videoExplainers = videoExplainers;
     }
@@ -453,11 +465,27 @@ const updateContent = async (req, res) => {
         changes.audioNarrations = "modified";
         content.audioNarrations = audioNarrations;
     }
-    
+    if (learningObjectives !== undefined && JSON.stringify(content.learningObjectives?.slice().sort() || []) !== JSON.stringify(learningObjectives.slice().sort())) {
+        changes.learningObjectives = { old: content.learningObjectives, new: learningObjectives };
+        content.learningObjectives = learningObjectives;
+    }
+    if (keyVocabulary !== undefined && JSON.stringify(content.keyVocabulary?.slice().sort() || []) !== JSON.stringify(keyVocabulary.slice().sort())) {
+        changes.keyVocabulary = { old: content.keyVocabulary, new: keyVocabulary };
+        content.keyVocabulary = keyVocabulary;
+    }
+
     if (Object.keys(changes).length > 0) {
         content.lastUpdatedBy = req.user._id;
+        // When critical fields like originalText change, it might be good to clear existing AI-generated versions
+        // as they might become outdated. This is a design choice.
+        // Example: If originalText changes, clear simplifiedVersions and visualMaps
+        if (changes.originalText) {
+            content.simplifiedVersions = [];
+            content.visualMaps = [];
+            changes.clearedAiVersions = true;
+        }
     }
-    
+
     const updatedContent = await content.save();
 
     if (Object.keys(changes).length > 0) {
@@ -466,11 +494,10 @@ const updateContent = async (req, res) => {
           'UPDATE_CONTENT',
           'Content',
           updatedContent._id,
-          { 
-            topicSlug: updatedContent.topic, 
-            titleFromUser: topic, // User input title
-            changes: changes, // Log specific changes
-            // oldValuesSummary: oldValuesSummary // Optional: Log summary of old values
+          {
+            topicSlug: updatedContent.topic,
+            titleFromUser: topic,
+            changes: changes,
           },
           req.ip
         );
@@ -482,7 +509,6 @@ const updateContent = async (req, res) => {
     res.json(populatedContent);
   } catch (err) {
     console.error("Error updating content:", err.message, err.stack);
-    if (err.kind === 'ObjectId') { return res.status(400).json({ message: 'Invalid content ID format.' }); }
     res.status(500).json({ error: 'Failed to update content' });
   }
 };
@@ -490,25 +516,29 @@ const updateContent = async (req, res) => {
 const deleteContent = async (req, res) => {
   try {
     const contentId = req.params.id;
+    if (!mongoose.Types.ObjectId.isValid(contentId)) {
+        return res.status(400).json({ message: 'Invalid content ID format.' });
+    }
     const content = await Content.findById(contentId);
     if (!content) { return res.status(404).json({ error: 'Content not found.' }); }
 
-    const deletedTopicSlug = content.topic; 
-    const deletedTitle = content.topic.replace(/-/g, ' '); // For audit log
+    const deletedTopicSlug = content.topic;
+    const deletedTitle = content.topic.replace(/-/g, ' ');
     await content.deleteOne();
+
+    const progressDeletionResult = await UserLearningProgress.deleteMany({ contentId: contentId });
 
     await logAction(
       req.user.id,
       'DELETE_CONTENT',
       'Content',
-      contentId, // Use the original ID as entityId
-      { topicSlug: deletedTopicSlug, title: deletedTitle },
+      contentId, // Keep as ObjectId if schema expects it, or convert to string if necessary
+      { topicSlug: deletedTopicSlug, title: deletedTitle, progressRecordsDeletedCount: progressDeletionResult.deletedCount },
       req.ip
     );
-    res.json({ message: 'Content removed successfully.' });
+    res.json({ message: 'Content and associated learning progress removed successfully.' });
   } catch (err) {
     console.error("Error deleting content:", err.message, err.stack);
-    if (err.kind === 'ObjectId') { return res.status(400).json({ message: 'Invalid content ID format.' });}
     res.status(500).json({ error: 'Failed to delete content' });
   }
 };
@@ -517,18 +547,33 @@ const getContentByTopic = async (req, res) => {
     try {
         const topicSlug = req.params.topic.toLowerCase().trim();
         const user = req.user ? await User.findById(req.user.id).select('preferences') : null;
+
         const content = await Content.findOne({ topic: topicSlug })
                                 .populate('createdBy', 'name email')
                                 .populate('lastUpdatedBy', 'name email');
+
         if (!content) { return res.status(404).json({ message: `Content not found for topic: ${topicSlug}` });}
-        
+
         let responseContent = { ...content.toObject() };
-        if (user?.preferences?.readingLevel) {
-            const cacheLevelKey = mapReadingLevelToCacheKey(user.preferences.readingLevel);
+        let learningProgress = null;
+
+        if (user) {
+            learningProgress = await UserLearningProgress.findOne({ userId: user._id, contentId: content._id });
+        }
+        responseContent.learningProgress = learningProgress;
+
+        // Determine default simplified text
+        if (user?.preferences?.readingLevel || !responseContent.defaultSimplifiedText) {
+            const preferredLevel = user?.preferences?.readingLevel || 'basic';
+            const cacheLevelKey = mapReadingLevelToCacheKey(preferredLevel);
             const preferredSimplifiedVersion = content.simplifiedVersions.find(v => v.level === cacheLevelKey);
+
             if (preferredSimplifiedVersion) {
                 responseContent.defaultSimplifiedText = preferredSimplifiedVersion.text;
                 responseContent.defaultSimplifiedLevel = preferredSimplifiedVersion.level;
+            } else if (content.simplifiedVersions && content.simplifiedVersions.length > 0) {
+                responseContent.defaultSimplifiedText = content.simplifiedVersions[0].text;
+                responseContent.defaultSimplifiedLevel = content.simplifiedVersions[0].level;
             }
         }
         res.json(responseContent);
@@ -539,70 +584,70 @@ const getContentByTopic = async (req, res) => {
 };
 
 const simplifyContent = async (req, res) => {
-  if (!GOOGLE_API_KEY || !textModel) {
+  if (!textModel) { // Check if textModel is initialized
     console.error("Google AI SDK (textModel) not initialized for simplifyContent.");
-    return res.status(500).json({ error: "AI service is not configured." });
+    return res.status(500).json({ error: "AI service is not configured or API key missing." });
   }
   try {
-    const { topic: topicSlug } = req.body;
-    let { level: clientRequestedLevel } = req.body;
+    const { topic: topicSlug, level: clientRequestedLevel } = req.body;
     if (!topicSlug) { return res.status(400).json({ error: "Topic slug is required." }); }
 
-    let promptLevelDescription;
-    let cacheLevelKey;
-    if (!clientRequestedLevel) {
-      const userId = req.user?._id;
-      let userReadingLevelPref = 'basic';
-      if (userId) {
-        const user = await User.findById(userId).select('preferences');
-        if (user?.preferences?.readingLevel) userReadingLevelPref = user.preferences.readingLevel;
-      }
-      promptLevelDescription = mapReadingLevelToPromptDescription(userReadingLevelPref);
-      cacheLevelKey = mapReadingLevelToCacheKey(userReadingLevelPref);
-    } else {
-      promptLevelDescription = mapReadingLevelToPromptDescription(clientRequestedLevel);
-      cacheLevelKey = mapReadingLevelToCacheKey(clientRequestedLevel);
+    let effectiveLevel = clientRequestedLevel;
+    if (!effectiveLevel && req.user) {
+      const user = await User.findById(req.user._id).select('preferences.readingLevel');
+      effectiveLevel = user?.preferences?.readingLevel || 'basic';
+    } else if (!effectiveLevel) {
+        effectiveLevel = 'basic'; // Default if no user and no specific request
     }
+
+    const promptLevelDescription = mapReadingLevelToPromptDescription(effectiveLevel);
+    const cacheLevelKey = mapReadingLevelToCacheKey(effectiveLevel);
 
     let contentDoc = await Content.findOne({ topic: topicSlug.toLowerCase().trim() });
     if (!contentDoc) { return res.status(404).json({ error: `Content for topic "${topicSlug}" not found.` });}
 
     const existingSimplified = contentDoc.simplifiedVersions.find(v => v.level === cacheLevelKey);
     if (existingSimplified) {
-      return res.json({ simplifiedText: existingSimplified.text, level: cacheLevelKey });
+      return res.json({ simplifiedText: existingSimplified.text, level: cacheLevelKey, topicId: contentDoc._id.toString() });
     }
 
-    console.log(`Generating new simplified version (Gemini) for: ${contentDoc.topic}, prompt level: "${promptLevelDescription}"`);
+    console.log(`Generating new simplified version (Gemini) for: ${contentDoc.topic}, prompt level: "${promptLevelDescription}", cache key: "${cacheLevelKey}"`);
     const simplificationPrompt = `You are an expert tutor specialized in adapting complex educational text for neurodivergent learners. Your goal is to simplify the following text while preserving its core meaning and accuracy. Adapt your language to suit a '${promptLevelDescription}' reading level. Use clear, concise sentences, and break down complex ideas into smaller, digestible parts. Avoid jargon where possible, or explain it simply if essential. If relevant, use analogies or simple examples. Ensure the tone is encouraging and supportive. Do NOT add any preambles like "Okay, here's the simplified version". Directly provide the simplified text. Original Text:\n---\n${contentDoc.originalText}\n---\n\nSimplified Text (for ${promptLevelDescription} understanding):`;
     const safetySettings = [ { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, ];
-    const generationConfig = { temperature: 0.3, maxOutputTokens: 2000 }; 
-    
+    const generationConfig = { temperature: 0.3, maxOutputTokens: 2000 };
+
     const result = await textModel.generateContent({ contents: [{ role: "user", parts: [{ text: simplificationPrompt }] }], generationConfig, safetySettings });
     const response = result.response;
 
     if (!response || !response.candidates || response.candidates.length === 0 || !response.candidates[0].content?.parts) {
         const blockReason = response?.promptFeedback?.blockReason || response?.candidates?.[0]?.finishReason;
-        console.error("Content generation issue with Google Gemini (simplify):", { blockReason, safetyRatings: response?.candidates?.[0]?.safetyRatings, fullResponse: JSON.stringify(response, null, 2) });
+        console.error("Content generation issue with Google Gemini (simplify):", { blockReason, safetyRatings: response?.candidates?.[0]?.safetyRatings });
         let userMessage = 'AI failed to generate simplified content.';
         if (blockReason === "SAFETY" || response?.candidates?.[0]?.finishReason === "SAFETY") { userMessage = 'Content could not be simplified due to safety filters.';}
         else if (blockReason) { userMessage = `Content generation blocked: ${blockReason}.`;}
         return res.status(400).json({ error: userMessage });
     }
     const simplifiedText = response.candidates[0].content.parts.map(part => part.text).join("").trim();
-    contentDoc.simplifiedVersions.push({ level: cacheLevelKey, text: simplifiedText, createdAt: new Date() });
-    content.lastUpdatedBy = req.user._id;
-    await contentDoc.save();
 
-    await logAction(
-        req.user.id,
-        'GENERATE_SIMPLIFIED_CONTENT',
-        'Content',
-        contentDoc._id,
-        { topic: contentDoc.topic, level: cacheLevelKey },
-        req.ip
-    );
+    const alreadyExists = contentDoc.simplifiedVersions.some(v => v.level === cacheLevelKey && v.text === simplifiedText);
+    if (!alreadyExists) {
+        contentDoc.simplifiedVersions.push({ level: cacheLevelKey, text: simplifiedText, createdAt: new Date() });
+        if (req.user) contentDoc.lastUpdatedBy = req.user._id;
+        await contentDoc.save();
+    }
 
-    res.json({ simplifiedText, level: cacheLevelKey });
+    if (req.user) {
+        await logAction(
+            req.user.id,
+            'GENERATE_SIMPLIFIED_CONTENT',
+            'Content',
+            contentDoc._id,
+            { topic: contentDoc.topic, requestedLevel: clientRequestedLevel, effectiveLevel: effectiveLevel, cacheLevelKey: cacheLevelKey },
+            req.ip
+        );
+    }
+
+    res.json({ simplifiedText, level: cacheLevelKey, topicId: contentDoc._id.toString() });
   } catch (err) {
     console.error("Error in simplifyContent (Google Gemini):", err.message, err.stack);
     let userMessage = 'Failed to simplify content using Google AI.';
@@ -613,9 +658,9 @@ const simplifyContent = async (req, res) => {
 };
 
 const generateVisualMap = async (req, res) => {
-  if (!GOOGLE_API_KEY || !textModel) {
+  if (!textModel) {
     console.error("Google AI SDK (textModel) not initialized for generateVisualMap.");
-    return res.status(500).json({ error: "AI service is not configured." });
+    return res.status(500).json({ error: "AI service is not configured or API key missing." });
   }
   try {
     const { topic: topicSlug, format = 'mermaid' } = req.body;
@@ -626,7 +671,7 @@ const generateVisualMap = async (req, res) => {
     if (!contentDoc) { return res.status(404).json({ error: `Content for topic "${topicSlug}" not found.`});}
 
     const existingMap = contentDoc.visualMaps?.find(v => v.format === format);
-    if (existingMap) { return res.json({ visualMap: existingMap }); }
+    if (existingMap) { return res.json({ visualMap: existingMap, topicId: contentDoc._id.toString() }); }
 
     console.log(`Generating new visual map (Gemini) for: ${contentDoc.topic}, format: ${format}`);
     const visualMapPrompt = `
@@ -651,13 +696,13 @@ const generateVisualMap = async (req, res) => {
 
       Original Text (excerpt, max 3500 chars):
       ---
-      ${contentDoc.originalText.substring(0, 3500)} 
+      ${contentDoc.originalText.substring(0, 3500)}
       ---
 
       MermaidJS Mindmap Code:
     `;
     const safetySettings = [ { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE }, ];
-    const generationConfig = { temperature: 0.1, maxOutputTokens: 1500 }; 
+    const generationConfig = { temperature: 0.1, maxOutputTokens: 1500 };
     const result = await textModel.generateContent({ contents: [{ role: "user", parts: [{ text: visualMapPrompt }] }], generationConfig, safetySettings });
     const response = result.response;
 
@@ -675,19 +720,21 @@ const generateVisualMap = async (req, res) => {
 
     const newVisualMap = { format, data: mermaidData, createdAt: new Date(), notes: "AI-Generated (Gemini)" };
     contentDoc.visualMaps.push(newVisualMap);
-    content.lastUpdatedBy = req.user._id;
+    if (req.user) contentDoc.lastUpdatedBy = req.user._id;
     await contentDoc.save();
 
-    await logAction(
-        req.user.id,
-        'GENERATE_VISUAL_MAP',
-        'Content',
-        contentDoc._id,
-        { topic: contentDoc.topic, format: format },
-        req.ip
-    );
+    if(req.user) {
+        await logAction(
+            req.user.id,
+            'GENERATE_VISUAL_MAP',
+            'Content',
+            contentDoc._id,
+            { topic: contentDoc.topic, format: format },
+            req.ip
+        );
+    }
 
-    res.json({ visualMap: newVisualMap });
+    res.json({ visualMap: newVisualMap, topicId: contentDoc._id.toString() });
   } catch (err) {
     console.error("Error in generateVisualMap (Google Gemini):", err.message, err.stack);
     let userMessage = 'Failed to generate visual map using Google AI.';
@@ -702,32 +749,36 @@ const generateAudioNarration = async (req, res) => {
     if (!contentId || !textToNarrate) {
         return res.status(400).json({error: "Content ID and text are required."});
     }
+    if (!mongoose.Types.ObjectId.isValid(contentId)) {
+        return res.status(400).json({ error: 'Invalid content ID.' });
+    }
      const content = await Content.findById(contentId);
      if (!content) {
         return res.status(404).json({error: "Content not found."});
      }
-    // Placeholder logic as actual AI generation is complex
-    // In a real scenario, you'd call a TTS service, get a URL, and save it.
+
     const placeholderUrl = `https://example.com/audio/${contentId}-${Date.now()}.mp3`;
     const newNarration = {
         url: placeholderUrl,
-        language: 'en-US', // Or from user prefs/request
+        language: 'en-US',
         voice: 'default',
         createdAt: new Date()
     };
     content.audioNarrations.push(newNarration);
-    content.lastUpdatedBy = req.user._id;
+    if (req.user) content.lastUpdatedBy = req.user._id;
     await content.save();
-    
-    await logAction(
-        req.user.id, 
-        'GENERATE_AUDIO_NARRATION', 
-        'Content', 
-        contentId, 
-        { topic: content.topic, url: placeholderUrl, source: "placeholder" }, 
-        req.ip
-    );
-    res.status(201).json({ message: "Audio narration URL placeholder created.", narration: newNarration });
+
+    if(req.user) {
+        await logAction(
+            req.user.id,
+            'GENERATE_AUDIO_NARRATION',
+            'Content',
+            contentId,
+            { topic: content.topic, url: placeholderUrl, source: "placeholder_manual" }, // Updated source
+            req.ip
+        );
+    }
+    res.status(201).json({ message: "Audio narration URL placeholder created.", narration: newNarration, topicId: contentId.toString() });
 };
 const findVideoExplainers = async (req, res) => {
   res.status(501).json({ error: "Video explainer sourcing not implemented." });
@@ -751,87 +802,116 @@ module.exports = {
 const axios = require('axios');
 const Session = require('../models/Session');
 const Content = require('../models/Content');
-const User = require('../models/User'); // To get user preferences
+const User = require('../models/User');
+const mongoose = require('mongoose'); // For ObjectId validation
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const OPENROUTER_DEFAULT_MODEL = process.env.OPENROUTER_DEFAULT_MODEL || 'mistralai/mistral-7b-instruct:free';
-const YOUR_SITE_URL = process.env.YOUR_SITE_URL || 'http://localhost:3000';
-const YOUR_SITE_NAME = process.env.YOUR_SITE_NAME || 'AccessibleLearningPortal';
+const OPENROUTER_DEFAULT_MODEL = process.env.OPENROUTER_DEFAULT_MODEL || 'mistralai/mistral-7b-instruct:free'; // or a better free/paid model
+const YOUR_SITE_URL = process.env.YOUR_SITE_URL || 'http://localhost:3000'; // Replace with your actual site URL
+const YOUR_SITE_NAME = process.env.YOUR_SITE_NAME || 'AccessibleLearningPortal'; // Replace with your actual site name
 
-// Helper to map user reading level to simplification level for context
 const mapReadingLevelToSimplifyLevel = (readingLevel) => {
-  switch (readingLevel) {
-    case 'basic': return 'easy';
-    case 'intermediate': case 'advanced': return 'moderate';
+  switch (readingLevel?.toLowerCase()) {
+    case 'eli5': return 'eli5';
+    case 'basic': case 'easy': return 'easy';
+    case 'intermediate': case 'moderate': return 'moderate';
+    case 'advanced': return 'advanced';
+    case 'high_school': return 'high_school';
+    case 'college_intro': return 'college_intro';
     default: return 'easy';
   }
 };
 
 exports.askQuestion = async (req, res) => {
   try {
-    const { question, topic } = req.body;
+    const { question, topic, contentId } = req.body; // contentId is optional, topic is slug
     const userId = req.user._id;
 
     if (!question || !topic) {
-      return res.status(400).json({ error: 'Question and topic are required.' });
+      return res.status(400).json({ error: 'Question and topic (slug) are required.' });
+    }
+    if (contentId && !mongoose.Types.ObjectId.isValid(contentId)) {
+        return res.status(400).json({ error: 'Invalid contentId format.' });
     }
 
-    const user = await User.findById(userId).select('preferences');
-    const userReadingLevel = user?.preferences?.readingLevel || 'basic';
-    const preferredSimplifyLevel = mapReadingLevelToSimplifyLevel(userReadingLevel);
 
-    // 1. Fetch context based on the topic
-    const content = await Content.findOne({ topic: topic.toLowerCase().trim() });
-    let contextText = "General knowledge.";
+    const user = await User.findById(userId).select('preferences');
+    const userReadingLevel = user?.preferences?.readingLevel || 'basic'; // Default reading level
+    // Use the new granular map for context fetching, if applicable
+    const preferredSimplifyLevelForContext = mapReadingLevelToSimplifyLevel(userReadingLevel);
+
+    let contentDoc;
+    if (contentId) {
+        contentDoc = await Content.findById(contentId);
+    } else if (topic) { // Fallback to topic slug if no ID
+        contentDoc = await Content.findOne({ topic: topic.toLowerCase().trim() });
+    }
+
+    let contextText = "General knowledge. The student is asking about a topic for which specific context was not found in the database.";
     let contextUsed = 'general_knowledge';
 
-    if (content) {
-        // Prioritize using a simplified version matching user's preference if available
-        const preferredSimplifiedVersion = content.simplifiedVersions.find(v => v.level === preferredSimplifyLevel);
+    if (contentDoc) {
+        const preferredSimplifiedVersion = contentDoc.simplifiedVersions.find(v => v.level === preferredSimplifyLevelForContext);
         if (preferredSimplifiedVersion) {
             contextText = preferredSimplifiedVersion.text;
-            contextUsed = `simplified_${preferredSimplifyLevel}`;
+            contextUsed = `simplified_${preferredSimplifyLevelForContext}`;
         } else {
-            // Fallback to any 'easy' simplified version if preferred not found
-            const easyVersion = content.simplifiedVersions.find(v => v.level === 'easy');
+            // Fallback to any 'easy' or 'eli5' simplified version if preferred not found
+            const easyVersion = contentDoc.simplifiedVersions.find(v => v.level === 'easy' || v.level === 'eli5');
             if (easyVersion) {
                 contextText = easyVersion.text;
-                contextUsed = 'simplified_easy';
+                contextUsed = `simplified_${easyVersion.level}`;
             } else {
-                contextText = content.originalText; // Fallback to original if no suitable simplified version
+                contextText = contentDoc.originalText; // Fallback to original
                 contextUsed = 'original';
             }
         }
     } else {
-         console.warn(`Content not found for topic "${topic}" in QA, using general context.`);
+         console.warn(`QA: Content not found for topic "${topic}" or ID "${contentId}", using general context.`);
     }
 
-    // 2. Construct prompt for LLM, incorporating user preference for clarity
-    let promptIntro = `You are a friendly, patient, and helpful tutor for a neurodivergent student. The student prefers explanations that are very clear, simple, and tailored for a '${userReadingLevel}' reading level.`;
+    // Fetch last 2-3 interactions for context
+    const sessionData = await Session.findOne({ userId: userId }).sort({ 'interactions.timestamp': -1 });
+    let previousInteractionsContext = "";
+    if (sessionData && sessionData.interactions && sessionData.interactions.length > 0) {
+        const relevantInteractions = sessionData.interactions
+            .filter(inter => inter.topic === (contentDoc?.topic || topic)) // Filter by current topic slug
+            .slice(-3); // Get last 3, adjust as needed
+        if (relevantInteractions.length > 0) {
+            previousInteractionsContext = "\nPrevious conversation on this topic:\n" +
+                relevantInteractions.map(inter => `Student: ${inter.question || 'User performed an action.'}\nTutor: ${inter.answer || 'System responded.'}`).join("\n---\n") + // Handle non-question interactions gracefully
+                "\n--- (End of previous conversation) ---\n";
+        }
+    }
+
+    let promptIntro = `You are a friendly, patient, and helpful AI tutor for a neurodivergent student. The student's preferred reading level is '${userReadingLevel}'. Adapt your language complexity accordingly.`;
     if (user?.preferences?.preferredContentMode === 'visual') {
         promptIntro += " The student sometimes benefits from analogies or visualizable descriptions if appropriate for the question."
     }
+    promptIntro += " If the student seems stuck, confused by your explanation, or asks multiple clarifying questions about the same small detail, proactively offer to explain it differently, provide an example, or break it down further. Your goal is to ensure understanding and build confidence."
+
 
     const prompt = `${promptIntro}
-Context on the topic "${topic}":
+${previousInteractionsContext}
+Current Topic Context ("${contentDoc?.topic.replace(/-/g,' ') || topic}"):
 ---
-${contextText.substring(0, 2500)}
+${contextText.substring(0, 3000)}
 ---
-Based *primarily* on the provided context, answer the student's question. If the context is insufficient, you may use your general knowledge but state that you are doing so. If the question is completely outside the context and your general knowledge, clearly say you don't have the information.
-Student's Question: "${question}"
-Answer:`;
+Based *primarily* on the provided context and recent conversation, answer the student's question. If the context is insufficient, you may use your general knowledge but state that you are doing so. If the question is completely outside the context and your general knowledge, clearly say you don't have the information or cannot help with that specific type of query.
+Student's Current Question: "${question}"
+AI Tutor's Answer:`;
 
-    // 3. Call OpenRouter API
+    const startTime = Date.now();
     const response = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
         model: OPENROUTER_DEFAULT_MODEL,
         messages: [
-          // System message sets the persona more broadly
-          { role: 'system', content: `You are a friendly, patient, and helpful tutor for a neurodivergent student who needs clear and simple explanations. Adapt your language complexity to a '${userReadingLevel}' reading level.` },
+          { role: 'system', content: `You are an AI tutor for neurodivergent students. Be patient, clear, and adapt to a '${userReadingLevel}' reading level. Be proactive in offering alternative explanations if the student seems to struggle.` },
           { role: 'user', content: prompt }
         ],
-        // max_tokens: 200 // Optionally limit response length
+        max_tokens: 350, // Adjust token limit as needed
+        temperature: 0.5, // Adjust for creativity vs. factuality
       },
       {
         headers: {
@@ -842,15 +922,15 @@ Answer:`;
         }
       }
     );
+    const durationMs = Date.now() - startTime;
 
     if (!response.data || !response.data.choices || response.data.choices.length === 0 || !response.data.choices[0].message) {
         console.error("Invalid response structure from OpenRouter API:", response.data);
-        throw new Error('Invalid response structure from OpenRouter API');
+        return res.status(502).json({ error: 'Received an invalid or empty response from the AI service.' });
     }
 
     const answer = response.data.choices[0].message.content.trim();
 
-    // 4. Log interaction
     await Session.findOneAndUpdate(
         { userId: userId },
         {
@@ -858,10 +938,14 @@ Answer:`;
                 interactions: {
                     question: question,
                     answer: answer,
-                    topic: topic,
-                    contextUsed: contextUsed // Log which context was used
+                    topic: contentDoc?.topic || topic, // Use actual slug from content if available
+                    contextUsed: contextUsed,
+                    modeUsed: 'qa',
+                    durationMs: durationMs,
+                    timestamp: new Date()
                 }
             },
+            $set: { lastActivityAt: new Date() },
             $setOnInsert: { createdAt: new Date() }
         },
         { upsert: true, new: true }
@@ -871,8 +955,275 @@ Answer:`;
 
   } catch (err) {
     console.error("Error in askQuestion:", err.response ? JSON.stringify(err.response.data, null, 2) : err.message, err.stack);
-    res.status(500).json({ error: err.message || 'Failed to get answer' });
+    let statusCode = 500;
+    let errorMessage = err.message || 'Failed to get answer from AI service.';
+    if (err.response) {
+        statusCode = err.response.status || 500;
+        errorMessage = err.response.data?.error?.message || err.response.data?.error || errorMessage;
+        if (statusCode === 401) errorMessage = "AI service authentication failed. Check API key.";
+        if (statusCode === 429) errorMessage = "AI service rate limit exceeded. Please try again later.";
+    }
+    res.status(statusCode).json({ error: errorMessage });
   }
+};
+
+===== File: /controllers/taskController.js =====
+// ===== File: /controllers/taskController.js =====
+const UserTask = require('../models/UserTask');
+const Content = require('../models/Content'); // To validate contentId if provided
+const { validationResult, body } = require('express-validator');
+
+exports.taskValidation = [
+    body('title').trim().isLength({ min: 1 }).withMessage('Title is required.'),
+    body('description').optional().trim(),
+    body('relatedContentId').optional().isMongoId().withMessage('Invalid content ID format.'),
+    body('dueDate').optional().isISO8601().toDate().withMessage('Invalid due date format.'),
+    body('completed').optional().isBoolean().withMessage('Completed must be a boolean.'),
+    body('priority').optional().isIn(['low', 'medium', 'high']).withMessage('Invalid priority value.')
+];
+
+exports.createTask = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const { title, description, relatedContentId, dueDate, priority } = req.body;
+        const userId = req.user._id;
+
+        let relatedContentTopic;
+        if (relatedContentId) {
+            const content = await Content.findById(relatedContentId).select('topic');
+            if (!content) {
+                return res.status(404).json({ error: 'Related content not found.' });
+            }
+            relatedContentTopic = content.topic;
+        }
+
+        const task = new UserTask({
+            userId,
+            title,
+            description,
+            relatedContentId,
+            relatedContentTopic,
+            dueDate,
+            priority
+        });
+
+        await task.save();
+        res.status(201).json(task);
+    } catch (error) {
+        console.error('Create Task Error:', error);
+        res.status(500).json({ error: 'Failed to create task.' });
+    }
+};
+
+exports.getUserTasks = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { completed, priority, sortBy = 'createdAt:desc', relatedContentId } = req.query;
+
+        const query = { userId };
+        if (completed !== undefined) {
+            query.completed = completed === 'true';
+        }
+        if (priority) {
+            query.priority = priority;
+        }
+        if (relatedContentId) {
+            query.relatedContentId = relatedContentId;
+        }
+
+        const sortOptions = {};
+        if (sortBy) {
+            const parts = sortBy.split(':');
+            sortOptions[parts[0]] = parts[1] === 'desc' ? -1 : 1;
+        }
+
+
+        const tasks = await UserTask.find(query).sort(sortOptions);
+        res.json(tasks);
+    } catch (error) {
+        console.error('Get User Tasks Error:', error);
+        res.status(500).json({ error: 'Failed to retrieve tasks.' });
+    }
+};
+
+exports.getTaskById = async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const userId = req.user._id;
+
+        const task = await UserTask.findOne({ _id: taskId, userId });
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found or not authorized.' });
+        }
+        res.json(task);
+    } catch (error) {
+        if (error.kind === 'ObjectId') {
+            return res.status(400).json({ error: 'Invalid task ID format.' });
+        }
+        console.error('Get Task By ID Error:', error);
+        res.status(500).json({ error: 'Failed to retrieve task.' });
+    }
+};
+
+exports.updateTask = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+        const taskId = req.params.id;
+        const userId = req.user._id;
+        const { title, description, relatedContentId, dueDate, completed, priority } = req.body;
+
+        const task = await UserTask.findOne({ _id: taskId, userId });
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found or not authorized.' });
+        }
+
+        if (title) task.title = title;
+        if (description !== undefined) task.description = description;
+        if (dueDate !== undefined) task.dueDate = dueDate; // Allow null to clear date
+        if (completed !== undefined) task.completed = completed;
+        if (priority) task.priority = priority;
+
+        if (relatedContentId !== undefined) { // Allows setting to null or new ID
+            if (relatedContentId) {
+                const content = await Content.findById(relatedContentId).select('topic');
+                if (!content) {
+                    return res.status(404).json({ error: 'Related content not found.' });
+                }
+                task.relatedContentId = relatedContentId;
+                task.relatedContentTopic = content.topic;
+            } else {
+                task.relatedContentId = undefined;
+                task.relatedContentTopic = undefined;
+            }
+        }
+
+
+        await task.save();
+        res.json(task);
+    } catch (error) {
+        if (error.kind === 'ObjectId') {
+            return res.status(400).json({ error: 'Invalid task ID format.' });
+        }
+        console.error('Update Task Error:', error);
+        res.status(500).json({ error: 'Failed to update task.' });
+    }
+};
+
+exports.deleteTask = async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const userId = req.user._id;
+
+        const task = await UserTask.findOneAndDelete({ _id: taskId, userId });
+        if (!task) {
+            return res.status(404).json({ error: 'Task not found or not authorized.' });
+        }
+        res.json({ message: 'Task deleted successfully.' });
+    } catch (error) {
+        if (error.kind === 'ObjectId') {
+            return res.status(400).json({ error: 'Invalid task ID format.' });
+        }
+        console.error('Delete Task Error:', error);
+        res.status(500).json({ error: 'Failed to delete task.' });
+    }
+};
+
+
+// --- User Learning Progress Endpoints ---
+const UserLearningProgress = require('../models/UserLearningProgress');
+
+exports.getLearningProgressForContent = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const { contentId } = req.params;
+
+        if (!mongoose.Types.ObjectId.isValid(contentId)) {
+            return res.status(400).json({ error: 'Invalid content ID format.' });
+        }
+
+        const progress = await UserLearningProgress.findOne({ userId, contentId });
+        if (!progress) {
+            // Return a default structure or 204 No Content, or 404 if preferred
+            return res.status(200).json({
+                userId,
+                contentId,
+                status: 'not_started',
+                timeSpentTotalMs: 0,
+                modesUsedFrequency: [],
+                lastAccessed: null
+            });
+        }
+        res.json(progress);
+    } catch (error) {
+        console.error("Error fetching learning progress:", error);
+        res.status(500).json({ error: "Failed to fetch learning progress." });
+    }
+};
+
+exports.getRecentLearningActivity = async (req, res) => {
+    try {
+        const userId = req.user._id;
+        const limit = parseInt(req.query.limit) || 5;
+
+        const recentProgress = await UserLearningProgress.find({ userId, status: { $in: ['in_progress', 'completed'] } })
+            .sort({ lastAccessed: -1 })
+            .limit(limit)
+            .populate('contentId', 'topic originalText tags'); // Populate with content details
+
+        res.json(recentProgress);
+    } catch (error) {
+        console.error("Error fetching recent learning activity:", error);
+        res.status(500).json({ error: "Failed to fetch recent activity." });
+    }
+};
+
+
+exports.logContentInteraction = async (req, res) => {
+    const { contentId, mode, eventType, durationMs } = req.body; // eventType: 'start' or 'end'
+    const userId = req.user._id;
+
+    if (!mongoose.Types.ObjectId.isValid(contentId)) {
+        return res.status(400).json({ error: 'Invalid content ID.' });
+    }
+    if (!mode || typeof mode !== 'string') {
+        return res.status(400).json({ error: 'Mode is required.' });
+    }
+    if (!['start', 'end'].includes(eventType)) {
+        return res.status(400).json({ error: 'Invalid eventType. Must be "start" or "end".' });
+    }
+
+    try {
+        let progress;
+        if (eventType === 'start') {
+            progress = await UserLearningProgress.logInteractionStart(userId, contentId, mode);
+        } else if (eventType === 'end') {
+            if (typeof durationMs !== 'number' || durationMs < 0) {
+                return res.status(400).json({ error: 'Valid durationMs is required for "end" event.' });
+            }
+            progress = await UserLearningProgress.logInteractionEnd(userId, contentId, durationMs);
+        }
+
+        if (!progress && eventType === 'end') {
+            // This case is handled inside logInteractionEnd, but good to be aware
+            return res.status(200).json({ message: "Interaction end logged, but no active start found or duration insignificant." });
+        }
+        if (!progress) {
+            return res.status(404).json({error: "Could not find or update learning progress."})
+        }
+
+        res.status(200).json({ message: `Interaction ${eventType} logged successfully.`, progress });
+    } catch (error) {
+        console.error('Error logging content interaction:', error);
+        res.status(500).json({ error: 'Failed to log content interaction.' });
+    }
 };
 
 ===== File: /controllers/userController.js =====
@@ -1052,9 +1403,10 @@ module.exports = mongoose.model('AuditLog', auditLogSchema);
 const mongoose = require('mongoose');
 
 const simplifiedSchema = new mongoose.Schema({
-  level: { 
+  level: {
     type: String,
-    enum: ['easy', 'moderate', 'advanced'],
+    // Updated enum for granular simplification
+    enum: ['eli5', 'easy', 'moderate', 'advanced', 'high_school', 'college_intro'],
     required: true
   },
   text: { type: String },
@@ -1104,11 +1456,14 @@ const contentSchema = new mongoose.Schema({
   media: {
     imageUrls: [String],
   },
-  createdBy: { 
+  learningObjectives: [String], // NEW: for educators to specify
+  keyVocabulary: [String], // NEW: for educators
+
+  createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   },
-  lastUpdatedBy: { 
+  lastUpdatedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
@@ -1132,21 +1487,34 @@ contentSchema.pre('save', function(next) {
 module.exports = mongoose.model('Content', contentSchema);
 
 ===== File: /models/Session.js =====
+// ===== File: /models/Session.js =====
 const mongoose = require('mongoose');
+
+const interactionSchema = new mongoose.Schema({
+  question: String,
+  answer: String,
+  topic: String, // Existing
+  contextUsed: String, // Existing e.g., 'original', 'simplified_easy', 'general_knowledge'
+  modeUsed: String, // NEW: e.g., 'qa', 'simplification_request', 'visual_map_request'
+  durationMs: Number, // NEW: Time spent on this specific interaction if applicable
+  timestamp: { type: Date, default: Date.now }
+}, { _id: false });
 
 const sessionSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  interactions: [
-    {
-      question: String,
-      answer: String,
-      topic: String, // Added topic field
-      contextUsed: String, // e.g., 'original', 'simplified_easy', 'general_knowledge'
-      timestamp: { type: Date, default: Date.now }
-    }
-  ],
-  createdAt: { type: Date, default: Date.now }
+  interactions: [interactionSchema], // Updated schema for interactions
+  createdAt: { type: Date, default: Date.now },
+  lastActivityAt: { type: Date, default: Date.now } // NEW: To track active sessions
 });
+
+// Update lastActivityAt on modification of interactions
+sessionSchema.pre('findOneAndUpdate', function(next) {
+  if (this.getUpdate().$push && this.getUpdate().$push.interactions) {
+    this.getUpdate().lastActivityAt = new Date();
+  }
+  next();
+});
+
 
 module.exports = mongoose.model('Session', sessionSchema);
 
@@ -1191,6 +1559,186 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 };
 
 module.exports = mongoose.model('User', userSchema);
+
+===== File: /models/UserLearningProgress.js =====
+// ===== File: /models/UserLearningProgress.js =====
+const mongoose = require('mongoose');
+
+const modeUsageSchema = new mongoose.Schema({
+    mode: { type: String, required: true }, // e.g., 'original', 'simplified_easy', 'simplified_moderate', 'visual_mermaid', 'audio'
+    count: { type: Number, default: 0 },
+    totalTimeSpentMs: { type: Number, default: 0 }
+}, { _id: false });
+
+const userLearningProgressSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  contentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Content',
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ['not_started', 'in_progress', 'completed', 'bookmarked'],
+    default: 'not_started'
+  },
+  lastAccessed: {
+    type: Date,
+    default: Date.now
+  },
+  timeSpentTotalMs: { // Total time spent on this content across all sessions/modes
+    type: Number,
+    default: 0
+  },
+  modesUsedFrequency: [modeUsageSchema], // Tracks how often and for how long each mode is used for this content
+  // For future micro-assessments:
+  // quizScores: [{
+  //   quizId: String, // Could be an ObjectId if quizzes become separate models
+  //   score: Number,
+  //   attempts: Number,
+  //   lastAttempted: Date
+  // }],
+  notes: String, // User's personal notes on this content topic
+  currentInteractionData: { // Data from client-side tracking for the current interaction with content
+    mode: String,
+    startTime: Date,
+  }
+}, { timestamps: true }); // Adds createdAt and updatedAt
+
+// Compound index for efficient querying
+userLearningProgressSchema.index({ userId: 1, contentId: 1 }, { unique: true });
+userLearningProgressSchema.index({ userId: 1, status: 1 });
+userLearningProgressSchema.index({ userId: 1, lastAccessed: -1 });
+
+
+userLearningProgressSchema.statics.logInteractionStart = async function(userId, contentId, mode) {
+    return this.findOneAndUpdate(
+        { userId, contentId },
+        {
+            $set: {
+                status: 'in_progress',
+                lastAccessed: new Date(),
+                'currentInteractionData.mode': mode,
+                'currentInteractionData.startTime': new Date()
+            }
+        },
+        { upsert: true, new: true }
+    );
+};
+
+userLearningProgressSchema.statics.logInteractionEnd = async function(userId, contentId, durationMs) {
+    const progress = await this.findOne({ userId, contentId });
+    if (!progress || !progress.currentInteractionData || !progress.currentInteractionData.mode || !progress.currentInteractionData.startTime) {
+        // console.warn(`No active interaction found for user ${userId} on content ${contentId} to log end.`);
+        // If no start, maybe just update total time if duration is significant
+        if (durationMs > 1000) { // only log if more than a second
+             await this.findOneAndUpdate(
+                { userId, contentId },
+                {
+                    $inc: { timeSpentTotalMs: durationMs },
+                    $set: { lastAccessed: new Date(), status: 'in_progress' } // ensure status is in_progress
+                },
+                { upsert: true }
+            );
+        }
+        return null;
+    }
+
+    const mode = progress.currentInteractionData.mode;
+    // const startTime = progress.currentInteractionData.startTime;
+    // const actualDurationMs = new Date().getTime() - startTime.getTime(); // Can use this or client-provided
+
+    const updateQuery = {
+        $inc: {
+            timeSpentTotalMs: durationMs,
+        },
+        $set: {
+            lastAccessed: new Date(),
+            currentInteractionData: {} // Clear current interaction
+        }
+    };
+
+    // Update modesUsedFrequency
+    const modeUsageIndex = progress.modesUsedFrequency.findIndex(m => m.mode === mode);
+    if (modeUsageIndex > -1) {
+        updateQuery.$inc[`modesUsedFrequency.${modeUsageIndex}.count`] = 1;
+        updateQuery.$inc[`modesUsedFrequency.${modeUsageIndex}.totalTimeSpentMs`] = durationMs;
+    } else {
+        updateQuery.$push = {
+            modesUsedFrequency: { mode, count: 1, totalTimeSpentMs: durationMs }
+        };
+    }
+
+    return this.findOneAndUpdate(
+        { userId, contentId },
+        updateQuery,
+        { new: true }
+    );
+};
+
+
+module.exports = mongoose.model('UserLearningProgress', userLearningProgressSchema);
+
+===== File: /models/UserTask.js =====
+// ===== File: /models/UserTask.js =====
+const mongoose = require('mongoose');
+
+const userTaskSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  title: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  description: {
+    type: String,
+    trim: true
+  },
+  relatedContentId: { // Optional: link task to a specific content item
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Content'
+  },
+  relatedContentTopic: String, // Store topic slug for easy display if content is linked
+  dueDate: {
+    type: Date
+  },
+  completed: {
+    type: Boolean,
+    default: false
+  },
+  completedAt: {
+    type: Date
+  },
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high'],
+    default: 'medium'
+  },
+  // For future Pomodoro integration:
+  // pomodorosEstimated: Number,
+  // pomodorosCompleted: { type: Number, default: 0 }
+}, { timestamps: true }); // Adds createdAt and updatedAt
+
+userTaskSchema.index({ userId: 1, completed: 1, dueDate: 1 });
+
+userTaskSchema.pre('save', function(next) {
+  if (this.isModified('completed') && this.completed && !this.completedAt) {
+    this.completedAt = new Date();
+  } else if (this.isModified('completed') && !this.completed) {
+    this.completedAt = undefined;
+  }
+  next();
+});
+
+module.exports = mongoose.model('UserTask', userTaskSchema);
 
 ===== File: /routes/authRoutes.js =====
 const express = require('express');
@@ -1245,6 +1793,40 @@ router.post('/ask', protect, qaController.askQuestion);
 
 module.exports = router;
 
+===== File: /routes/taskRoutes.js =====
+// ===== File: /routes/taskRoutes.js =====
+const express = require('express');
+const router = express.Router();
+const {
+    createTask,
+    getUserTasks,
+    getTaskById,
+    updateTask,
+    deleteTask,
+    taskValidation,
+    getLearningProgressForContent, // Added
+    getRecentLearningActivity,   // Added
+    logContentInteraction        // Added
+} = require('../controllers/taskController'); // taskController now holds these too
+const { protect } = require('../middleware/authMiddleware');
+
+router.use(protect); // All task routes are protected
+
+// Task Management
+router.post('/', taskValidation, createTask);
+router.get('/', getUserTasks);
+router.get('/:id', getTaskById);
+router.put('/:id', taskValidation, updateTask);
+router.delete('/:id', deleteTask);
+
+// Learning Progress & Interaction Logging (could be in a separate progressRoutes.js too)
+router.get('/progress/content/:contentId', getLearningProgressForContent);
+router.get('/progress/recent', getRecentLearningActivity);
+router.post('/progress/log-interaction', logContentInteraction);
+
+
+module.exports = router;
+
 ===== File: /routes/userRoutes.js =====
 // ===== File: /routes/userRoutes.js =====
 const express = require('express');
@@ -1264,6 +1846,7 @@ router.delete('/:id', deleteUserCtrl);
 module.exports = router;
 
 ===== File: /app.js =====
+// ===== File: /app.js =====
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -1277,6 +1860,7 @@ const requiredEnvVars = [
   'MONGO_URI',
   'JWT_SECRET',
   'OPENROUTER_API_KEY',
+  'GOOGLE_API_KEY', // Ensure this is checked if not already
   // 'YOUR_SITE_URL', // Recommended, but provide defaults in controllers if not set
   // 'YOUR_SITE_NAME', // Recommended, but provide defaults if not set
   // 'OPENROUTER_DEFAULT_MODEL' // Has a default in controllers
@@ -1292,37 +1876,39 @@ const app = express();
 
 // --- Middleware ---
 const corsOptions = {
-  origin: [ 
+  origin: [
     "http://127.0.0.1:3000",
     "http://localhost:3000",
     "http://[::1]:3000",
-    process.env.FRONTEND_URL, 
-    "https://opulent-garbanzo-975vgqvp4jj4cg6x-3000.app.github.dev" 
-  ].filter(Boolean), 
+    process.env.FRONTEND_URL,
+    "https://opulent-garbanzo-975vgqvp4jj4cg6x-3000.app.github.dev"
+  ].filter(Boolean),
   credentials: true,
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   preflightContinue: false,
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
-app.use(helmet()); 
-app.use(express.json({ limit: '10mb' })); 
-app.use(express.urlencoded({ extended: true, limit: '10mb' })); 
+app.use(helmet());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev')); 
+  app.use(morgan('dev'));
 }
 
 // --- Routes ---
 const authRoutes = require('./routes/authRoutes');
 const contentRoutes = require('./routes/contentRoutes');
 const qaRoutes = require('./routes/qaRoutes');
-const userRoutes = require('./routes/userRoutes'); // Added userRoutes
+const userRoutes = require('./routes/userRoutes');
+const taskRoutes = require('./routes/taskRoutes'); // Includes learning progress routes
 
 app.use('/api/auth', authRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/qa', qaRoutes);
-app.use('/api/users', userRoutes); // Added userRoutes registration
+app.use('/api/users', userRoutes);
+app.use('/api/tasks', taskRoutes); // All task and learning progress related routes
 
 
 // --- Database Connection ---
@@ -1330,7 +1916,7 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected successfully."))
   .catch(err => {
     console.error("MongoDB connection error:", err.message);
-    process.exit(1); 
+    process.exit(1);
   });
 
 // --- Basic Welcome Route ---

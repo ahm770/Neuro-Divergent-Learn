@@ -55,13 +55,17 @@ const contentRoutes = require('./routes/contentRoutes');
 const qaRoutes = require('./routes/qaRoutes');
 const userRoutes = require('./routes/userRoutes');
 const taskRoutes = require('./routes/taskRoutes'); // Includes learning progress routes
-
+const courseRoutes = require('./routes/courseRoutes');
+const moduleRoutes = require('./routes/moduleRoutes');
+const lessonRoutes = require('./routes/lessonRoutes');
 app.use('/api/auth', authRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/qa', qaRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tasks', taskRoutes); // All task and learning progress related routes
-
+app.use('/api/courses', courseRoutes);
+app.use('/api/modules', moduleRoutes);
+app.use('/api/lessons', lessonRoutes);
 
 // --- Database Connection ---
 mongoose.connect(process.env.MONGO_URI)

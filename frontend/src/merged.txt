@@ -853,6 +853,305 @@ const MermaidDiagram = () => {
 
 export default MermaidDiagram;
 
+===== File: /src/components/dashboard/ContinueLearning.jsx =====
+// src/components/dashboard/ContinueLearning.jsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+const LoadingItem = () => (
+    <div className="p-3 border border-[var(--color-border)] rounded-md animate-pulse">
+        <div className="h-4 bg-gray-300 dark:bg-slate-700 rounded w-3/4 mb-2"></div>
+        <div className="h-3 bg-gray-200 dark:bg-slate-600 rounded w-1/2"></div>
+    </div>
+);
+
+const ContinueLearning = ({ activities, loading, error }) => {
+  return (
+    <div className="card">
+      <h2 className="text-xl font-semibold mb-3">Continue Learning</h2>
+      {loading && (
+        <div className="space-y-2">
+            <LoadingItem /><LoadingItem />
+        </div>
+      )}
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      {!loading && !error && activities.length === 0 && (
+        <p className="text-sm text-[var(--color-text-secondary)] text-center py-3">
+          No recent activity. Start exploring topics!
+        </p>
+      )}
+      {!loading && !error && activities.length > 0 && (
+        <ul className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
+          {activities.map(activity => (
+            activity.contentId ? (
+              <li key={activity._id || activity.contentId._id}>
+                <Link
+                  to={`/content/${activity.contentId.topic}`}
+                  className="block p-3 border border-[var(--color-border)] rounded-md hover:bg-primary/5 dark:hover:bg-primary-light/5 transition-colors"
+                >
+                  <h3 className="text-base font-medium capitalize text-[var(--color-text-primary)]">
+                    {activity.contentId.topic.replace(/-/g, ' ')}
+                  </h3>
+                  <p className="text-xs text-[var(--color-text-secondary)]">
+                    Last accessed: {new Date(activity.lastAccessed).toLocaleDateString()}
+                    {activity.status === 'completed' && <span className="ml-2 px-1.5 py-0.5 text-xs bg-green-100 text-green-700 dark:bg-green-700 dark:text-green-100 rounded-full">Completed</span>}
+                  </p>
+                </Link>
+              </li>
+            ) : null
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+export default ContinueLearning;
+
+===== File: /src/components/dashboard/PredictiveSuggestions.jsx =====
+// src/components/dashboard/PredictiveSuggestions.jsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+
+const PredictiveSuggestions = ({ userPreferences, recentActivity }) => {
+  let suggestions = [];
+
+  // Rule 1: If user prefers a certain mode, and has recent activity, suggest trying that mode.
+  if (userPreferences?.preferredContentMode && recentActivity?.length > 0) {
+    const mode = userPreferences.preferredContentMode;
+    suggestions.push({
+      id: 'pref-mode-1',
+      text: `You prefer '${mode}' mode. Try exploring new topics with it!`,
+      link: '/dashboard', // Link to explore topics page or similar
+      linkText: 'Explore Topics'
+    });
+  }
+
+  // Rule 2: If user has a reading level set, suggest simplifying content.
+  if (userPreferences?.readingLevel && userPreferences.readingLevel !== 'advanced') {
+    suggestions.push({
+      id: 'reading-level-1',
+      text: `Remember, you can simplify content to a '${userPreferences.readingLevel}' level for easier understanding.`,
+      link: null
+    });
+  }
+  
+  // Rule 3: If user uses visual map for one topic, suggest for another if available (pseudo)
+  const hasUsedVisual = recentActivity?.some(act => act.modesUsedFrequency?.find(m => m.mode.includes('visual')));
+  if (hasUsedVisual) {
+      suggestions.push({
+          id: 'visual-map-1',
+          text: "Visual maps can be helpful! Try generating one for a complex topic.",
+          link: null
+      });
+  }
+
+
+  if (suggestions.length === 0) {
+    suggestions.push({
+        id: 'default-sugg-1',
+        text: "Explore topics and update your preferences to get personalized suggestions!",
+        link: '/profile',
+        linkText: 'Update Preferences'
+    })
+  }
+  
+  // Limit suggestions shown
+  suggestions = suggestions.slice(0, 2);
+
+
+  return (
+    <div className="card">
+      <h2 className="text-xl font-semibold mb-3">Tips & Suggestions</h2>
+      {suggestions.length === 0 && (
+        <p className="text-sm text-[var(--color-text-secondary)]">No suggestions right now. Keep learning!</p>
+      )}
+      <ul className="space-y-3">
+        {suggestions.map(suggestion => (
+          <li key={suggestion.id} className="p-3 border border-dashed border-[var(--color-border)] rounded-md bg-primary/5 dark:bg-primary-light/5">
+            <p className="text-sm text-[var(--color-text-primary)]">{suggestion.text}</p>
+            {suggestion.link && (
+              <Link to={suggestion.link} className="text-xs text-[var(--color-link)] hover:underline mt-1 inline-block">
+                {suggestion.linkText || 'Learn More'}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+export default PredictiveSuggestions;
+
+===== File: /src/components/dashboard/UserTasks.jsx =====
+// src/components/dashboard/UserTasks.jsx
+import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../../contexts/AuthContext';
+import { getUserTasksApi, createTaskApi, updateTaskApi, deleteTaskApi } from '../../services/taskService';
+import { toast } from 'react-toastify';
+import { Link } from 'react-router-dom'; // For linking tasks to content
+
+const LoadingSpinner = () => <div className="text-xs text-center p-2">Loading tasks...</div>;
+const ErrorMessage = ({ msg }) => <p className="text-xs text-red-500 p-1">{msg}</p>;
+
+const TaskItem = ({ task, onToggleComplete, onDelete, onEdit }) => (
+    <li className={`flex items-center justify-between p-2.5 border-b border-[var(--color-border)] last:border-b-0 ${task.completed ? 'opacity-60' : ''}`}>
+        <div className="flex items-center">
+            <input
+                type="checkbox"
+                className="form-checkbox-default mr-3"
+                checked={task.completed}
+                onChange={() => onToggleComplete(task._id, !task.completed)}
+                aria-labelledby={`task-title-${task._id}`}
+            />
+            <div>
+                <span id={`task-title-${task._id}`} className={`text-sm ${task.completed ? 'line-through text-[var(--color-text-secondary)]' : 'text-[var(--color-text-primary)]'}`}>
+                    {task.title}
+                </span>
+                {task.relatedContentTopic && (
+                    <Link to={`/content/${task.relatedContentTopic}`} className="ml-1 text-xs text-[var(--color-link)] hover:underline">(Topic)</Link>
+                )}
+                {task.dueDate && (
+                    <p className="text-xs text-[var(--color-text-secondary)]">
+                        Due: {new Date(task.dueDate).toLocaleDateString()}
+                    </p>
+                )}
+            </div>
+        </div>
+        <div className="space-x-2">
+            <button onClick={() => onEdit(task)} className="text-xs text-blue-500 hover:underline">Edit</button>
+            <button onClick={() => onDelete(task._id)} className="text-xs text-red-500 hover:underline">Del</button>
+        </div>
+    </li>
+);
+
+
+const UserTasks = () => {
+  const [tasks, setTasks] = useState([]);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [showInput, setShowInput] = useState(false);
+  // const [editingTask, setEditingTask] = useState(null); // For a modal edit later
+
+  const { user } = useAuth();
+
+  const fetchTasks = useCallback(async () => {
+    if (!user) return;
+    setLoading(true); setError(null);
+    try {
+      const userTasks = await getUserTasksApi({ sortBy: 'completed:asc,dueDate:asc,createdAt:desc' });
+      setTasks(userTasks);
+    } catch (err) {
+      setError('Failed to load tasks.');
+      toast.error('Failed to load tasks.');
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  const handleAddTask = async (e) => {
+    e.preventDefault();
+    if (!newTaskTitle.trim()) return;
+    try {
+      const createdTask = await createTaskApi({ title: newTaskTitle });
+      setTasks(prevTasks => [createdTask, ...prevTasks.sort((a,b) => a.completed - b.completed)]); // Add to top, keep completed at bottom
+      setNewTaskTitle('');
+      setShowInput(false);
+      toast.success('Task added!');
+    } catch (err) {
+      toast.error('Failed to add task.');
+    }
+  };
+
+  const handleToggleComplete = async (taskId, completed) => {
+    try {
+      const updatedTask = await updateTaskApi(taskId, { completed });
+      setTasks(prevTasks =>
+        prevTasks.map(t => (t._id === taskId ? updatedTask : t)).sort((a,b) => a.completed - b.completed)
+      );
+      toast.info(`Task marked as ${completed ? 'complete' : 'incomplete'}.`);
+    } catch (err) {
+      toast.error('Failed to update task status.');
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!window.confirm("Delete this task?")) return;
+    try {
+      await deleteTaskApi(taskId);
+      setTasks(prevTasks => prevTasks.filter(t => t._id !== taskId));
+      toast.success('Task deleted.');
+    } catch (err) {
+      toast.error('Failed to delete task.');
+    }
+  };
+
+  const handleEditTask = (task) => {
+    // For now, prompt. Later, a modal.
+    const newTitle = prompt("Edit task title:", task.title);
+    if (newTitle && newTitle.trim() !== task.title) {
+        updateTaskApi(task._id, { title: newTitle.trim() })
+            .then(updated => {
+                setTasks(prev => prev.map(t => t._id === updated._id ? updated : t));
+                toast.success("Task title updated.");
+            })
+            .catch(() => toast.error("Failed to update task title."));
+    }
+  }
+
+  return (
+    <div className="card">
+      <h2 className="text-xl font-semibold mb-3">My Tasks</h2>
+      {loading && <LoadingSpinner />}
+      {error && <ErrorMessage msg={error} />}
+      {!loading && !error && (
+        <>
+          {tasks.length === 0 && !showInput && (
+            <p className="text-sm text-center text-[var(--color-text-secondary)] py-3">No tasks yet. Add one!</p>
+          )}
+          <ul className="mb-3 max-h-60 overflow-y-auto custom-scrollbar divide-y divide-[var(--color-border)]">
+            {tasks.map(task => (
+              <TaskItem
+                key={task._id}
+                task={task}
+                onToggleComplete={handleToggleComplete}
+                onDelete={handleDeleteTask}
+                onEdit={handleEditTask}
+              />
+            ))}
+          </ul>
+          {showInput ? (
+            <form onSubmit={handleAddTask} className="flex gap-2">
+              <input
+                type="text"
+                value={newTaskTitle}
+                onChange={(e) => setNewTaskTitle(e.target.value)}
+                placeholder="Enter new task title..."
+                className="form-input-default flex-grow text-sm"
+                autoFocus
+              />
+              <button type="submit" className="button-primary text-sm !py-1.5">Add</button>
+              <button type="button" onClick={() => setShowInput(false)} className="button-secondary text-sm !py-1.5">Cancel</button>
+            </form>
+          ) : (
+             <button onClick={() => setShowInput(true)} className="button-secondary text-sm w-full mt-2">
+                + Add New Task
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+export default UserTasks;
+
 ===== File: /src/contexts/AuthContext.jsx =====
 // src/contexts/AuthContext.jsx (Unified)
 import React, { createContext, useState, useEffect, useContext, useCallback } from 'react';
@@ -1036,27 +1335,29 @@ root.render(
 );
 
 ===== File: /src/pages/ContentPage.jsx =====
-// src/pages/ContentPage.jsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+// ===== File: /src/pages/ContentPage.jsx =====
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getContentByTopic,
   simplifyContent,
   generateVisualMap,
-  generateAudioNarration
+  // generateAudioNarration // Still placeholder-like based on backend
 } from '../services/contentService';
+import { logContentInteractionApi } from '../services/taskService';
+import { askQuestionApi } from '../services/qaService'; // For Q&A
 import MermaidDiagram from '../components/common/MermaidDiagram';
+import { toast } from 'react-toastify';
 
-// --- Inlined Placeholder Components (Ideally, these are separate files) ---
+// --- Inlined Placeholder Components ---
 const LoadingSpinner = ({ text = "Loading..." }) => (
   <div className="text-center p-10">
     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-link)] mx-auto mb-2"></div>
     <p className="text-[var(--color-text-secondary)]">{text}</p>
   </div>
 );
-
-const ErrorMessage = ({ message }) => (
+const ErrorMessageDisplay = ({ message }) => ( // Renamed to avoid conflict
   <div
     className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 my-4 rounded
                dark:bg-red-900/30 dark:border-red-600 dark:text-red-300
@@ -1067,8 +1368,7 @@ const ErrorMessage = ({ message }) => (
     <p>{message}</p>
   </div>
 );
-
-const InfoMessage = ({ message }) => (
+const InfoMessageDisplay = ({ message }) => ( // Renamed
   <div
     className="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-4 my-4 rounded
                dark:bg-blue-900/30 dark:border-blue-600 dark:text-blue-300
@@ -1078,118 +1378,219 @@ const InfoMessage = ({ message }) => (
     <p>{message}</p>
   </div>
 );
-// --- End Placeholder Components ---
+
+// Granular simplification levels for UI
+const SIMPLIFICATION_LEVELS = [
+    { value: 'eli5', label: 'ELI5 (Simplest)' },
+    { value: 'easy', label: 'Easy' },
+    { value: 'moderate', label: 'Moderate' },
+    { value: 'high_school', label: 'High School' },
+    { value: 'college_intro', label: 'College Intro' },
+    // { value: 'advanced', label: 'Advanced' }, // Can add if needed
+];
+
+// Map user preference reading levels to one of the granular cache keys
+const mapUserPrefToCacheKey = (prefLevel) => {
+    switch (prefLevel) {
+        case 'basic': return 'easy';
+        case 'intermediate': return 'moderate';
+        case 'advanced': return 'advanced'; // Or map to 'college_intro' if 'advanced' isn't a direct AI target
+        default: return 'easy';
+    }
+};
 
 
 const ContentPage = () => {
-  const { topic } = useParams();
-  const { user } = useAuth();
+  const { topic: topicSlug } = useParams();
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const userPrefs = user?.preferences;
 
-  const [content, setContent] = useState(null);
+  const [contentAndProgress, setContentAndProgress] = useState(null); // Stores { ...content, learningProgress }
   const [currentMode, setCurrentMode] = useState('original');
   const [displayedText, setDisplayedText] = useState('');
   const [visualMapData, setVisualMapData] = useState(null);
   const [audioUrl, setAudioUrl] = useState(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isProcessingMode, setIsProcessingMode] = useState(false);
+  const [selectedSimplificationLevel, setSelectedSimplificationLevel] = useState('');
 
-  // For on-page image toggle (optional, advanced UX)
-  // const [showImagesOverride, setShowImagesOverride] = useState(null); 
+  const interactionStartTimeRef = useRef(null);
+  const currentContentIdRef = useRef(null);
+  const currentModeRef = useRef('original'); // Ref to hold currentMode for reliable logging on unmount
+
+  const [qaQuestion, setQaQuestion] = useState('');
+  const [qaAnswer, setQaAnswer] = useState('');
+  const [qaLoading, setQaLoading] = useState(false);
+  const [qaError, setQaError] = useState('');
+
+
+  const logInteraction = useCallback(async (eventType, modeOverride = null, explicitDurationMs = null) => {
+    if (!isAuthenticated || !currentContentIdRef.current) return;
+
+    const modeToLog = modeOverride || currentModeRef.current;
+    let durationMs = explicitDurationMs;
+
+    if (eventType === 'end' && interactionStartTimeRef.current && explicitDurationMs === null) {
+        durationMs = Date.now() - interactionStartTimeRef.current;
+    }
+
+    if (eventType === 'end' && (durationMs === null || durationMs < 1500) && explicitDurationMs === null) {
+        interactionStartTimeRef.current = null;
+        return; // Skip logging very short interactions
+    }
+
+    try {
+      await logContentInteractionApi({
+        contentId: currentContentIdRef.current,
+        mode: modeToLog,
+        eventType,
+        durationMs: eventType === 'end' ? durationMs : undefined,
+      });
+      if (eventType === 'start') {
+        interactionStartTimeRef.current = Date.now();
+      } else if (eventType === 'end') {
+        interactionStartTimeRef.current = null;
+      }
+    } catch (loggingError) {
+      console.warn('Failed to log content interaction:', loggingError.message);
+    }
+  }, [isAuthenticated]);
 
   const fetchContentData = useCallback(async () => {
-    if (!topic) return;
+    if (!topicSlug) return;
     setLoading(true);
-    setError(null); setContent(null); setDisplayedText(''); setVisualMapData(null); setAudioUrl(null); setCurrentMode('original');
+    setError(null); setContentAndProgress(null); setDisplayedText(''); setVisualMapData(null); setAudioUrl(null);
+    setCurrentMode('original'); currentModeRef.current = 'original';
+    setSelectedSimplificationLevel(mapUserPrefToCacheKey(userPrefs?.readingLevel || 'easy'));
+
     try {
-      const data = await getContentByTopic(topic);
-      setContent(data);
-      console.log("Fetched Content Data:", data);
+      const data = await getContentByTopic(topicSlug);
+      setContentAndProgress(data);
+      currentContentIdRef.current = data._id;
       setDisplayedText(data.originalText);
 
-      if (userPrefs?.preferredContentMode) {
-        const prefMode = userPrefs.preferredContentMode;
-        const readingLevelCacheKey = userPrefs.readingLevel === 'basic' ? 'easy' : (userPrefs.readingLevel === 'advanced' ? 'advanced' : 'moderate');
-        
-        if (prefMode === 'simplified' && data.simplifiedVersions?.length > 0) {
-           const version = data.simplifiedVersions.find(v => v.level === readingLevelCacheKey) || data.simplifiedVersions[0];
-           if(version) { setDisplayedText(version.text); setCurrentMode('simplified'); }
-        } else if (prefMode === 'visual' && data.visualMaps?.length > 0) {
-            setVisualMapData(data.visualMaps[0]); setCurrentMode('visual');
-        } else if (prefMode === 'audio' && data.audioNarrations?.length > 0) {
-            setAudioUrl(data.audioNarrations[0].url); setCurrentMode('audio');
-        }
+      let initialMode = userPrefs?.preferredContentMode || 'original';
+      if (initialMode === 'simplified' && data.defaultSimplifiedText) {
+          setSelectedSimplificationLevel(data.defaultSimplifiedLevel || mapUserPrefToCacheKey(userPrefs?.readingLevel || 'easy'));
+          setDisplayedText(data.defaultSimplifiedText);
+          setCurrentMode('simplified'); currentModeRef.current = 'simplified';
+      } else if (initialMode === 'visual' && data.visualMaps?.length > 0) {
+          setVisualMapData(data.visualMaps.find(m => m.format === 'mermaid') || data.visualMaps[0]);
+          setCurrentMode('visual'); currentModeRef.current = 'visual';
+      } else if (initialMode === 'audio' && data.audioNarrations?.length > 0) {
+          setAudioUrl(data.audioNarrations[0].url);
+          setCurrentMode('audio'); currentModeRef.current = 'audio';
+      } else {
+          setCurrentMode('original'); currentModeRef.current = 'original';
       }
-    } catch (err) { 
-        setError(err.response?.data?.message || `Content for "${topic}" not found or failed to load.`);
-        console.error("Fetch content error:", err);
+      logInteraction('start', currentModeRef.current);
+    } catch (err) {
+      const errMsg = err.response?.data?.message || `Content for "${topicSlug}" not found or failed to load.`;
+      setError(errMsg);
+      toast.error(errMsg);
+      if(err.response?.status === 404) navigate('/dashboard'); // Or a 404 page
+    } finally {
+      setLoading(false);
     }
-    finally { setLoading(false); }
-  }, [topic, userPrefs]);
+  }, [topicSlug, userPrefs, logInteraction, navigate]);
 
-  useEffect(() => { fetchContentData(); }, [fetchContentData]);
+  useEffect(() => {
+    fetchContentData();
+    return () => {
+      logInteraction('end');
+      currentContentIdRef.current = null;
+    };
+  }, [fetchContentData]); // fetchContentData includes logInteraction
 
-  const handleModeChange = useCallback(async (mode, params = {}) => {
+
+  const handleModeChange = useCallback(async (newMode, params = {}) => {
+    if (!contentAndProgress) return;
     setError(null);
-    if (mode === currentMode && mode !== 'simplified') return;
 
-    setCurrentMode(mode);
+    const previousModeDuration = interactionStartTimeRef.current ? Date.now() - interactionStartTimeRef.current : null;
+    await logInteraction('end', currentModeRef.current, previousModeDuration);
+
+    setCurrentMode(newMode); currentModeRef.current = newMode;
     setIsProcessingMode(true);
-    setVisualMapData(null); 
-    setAudioUrl(null);     
-    
-    try {
-      if (!content) { setError("Content not loaded yet."); setIsProcessingMode(false); return; }
+    if (newMode !== 'visual') setVisualMapData(null);
+    if (newMode !== 'audio') setAudioUrl(null);
 
-      if (mode === 'original') {
-        setDisplayedText(content.originalText);
-      } else if (mode === 'simplified') {
-        const level = params.level || (userPrefs?.readingLevel === 'basic' ? 'easy' : (userPrefs?.readingLevel === 'advanced' ? 'advanced' : 'moderate'));
-        const cachedVersion = content.simplifiedVersions?.find(v => v.level === level);
+    await logInteraction('start', newMode);
+
+    try {
+      if (newMode === 'original') {
+        setDisplayedText(contentAndProgress.originalText);
+      } else if (newMode === 'simplified') {
+        const levelToSimplify = params.level || selectedSimplificationLevel || mapUserPrefToCacheKey(userPrefs?.readingLevel || 'easy');
+        setSelectedSimplificationLevel(levelToSimplify);
+
+        const cachedVersion = contentAndProgress.simplifiedVersions?.find(v => v.level === levelToSimplify);
         if (cachedVersion) {
           setDisplayedText(cachedVersion.text);
         } else {
-          const simplifiedData = await simplifyContent(content.topic, level);
-          setDisplayedText(simplifiedData.simplifiedText);
-          setContent(prev => ({...prev, simplifiedVersions: [...(prev.simplifiedVersions || []), {level, text: simplifiedData.simplifiedText, createdAt: new Date()}]}));
+          toast.info(`Generating ${levelToSimplify} simplification...`);
+          const simplifiedResult = await simplifyContent(contentAndProgress.topic, levelToSimplify);
+          setDisplayedText(simplifiedResult.simplifiedText);
+          setContentAndProgress(prev => ({
+            ...prev,
+            simplifiedVersions: [...(prev.simplifiedVersions || []), { level: simplifiedResult.level, text: simplifiedResult.simplifiedText, createdAt: new Date() }]
+          }));
         }
-      } else if (mode === 'visual') {
-        setDisplayedText(''); 
-        const format = 'mermaid'; 
-        const cachedMap = content.visualMaps?.find(v => v.format === format);
+      } else if (newMode === 'visual') {
+        setDisplayedText('');
+        const format = 'mermaid';
+        const cachedMap = contentAndProgress.visualMaps?.find(v => v.format === format);
         if (cachedMap) {
-            setVisualMapData(cachedMap);
+          setVisualMapData(cachedMap);
         } else {
-            const mapData = await generateVisualMap(content.topic, format);
-            setVisualMapData(mapData.visualMap);
-            setContent(prev => ({...prev, visualMaps: [...(prev.visualMaps || []), mapData.visualMap]}));
+          toast.info("Generating visual map...");
+          const mapResult = await generateVisualMap(contentAndProgress.topic, format);
+          setVisualMapData(mapResult.visualMap);
+          setContentAndProgress(prev => ({ ...prev, visualMaps: [...(prev.visualMaps || []), mapResult.visualMap] }));
         }
-      } else if (mode === 'audio') {
-        setDisplayedText(''); 
-        const readingLevelCacheKey = userPrefs?.readingLevel === 'basic' ? 'easy' : (userPrefs?.readingLevel === 'advanced' ? 'advanced' : 'moderate');
-        const textForAudio = content.simplifiedVersions?.find(v => v.level === readingLevelCacheKey)?.text || content.originalText;
-        const cachedAudio = content.audioNarrations?.[0]; 
-        if(cachedAudio) { 
-            setAudioUrl(cachedAudio.url); 
-        } else if (textForAudio) {
-            const narrationData = await generateAudioNarration(content._id, textForAudio);
-            setAudioUrl(narrationData.narration.url);
-            setContent(prev => ({...prev, audioNarrations: [...(prev.audioNarrations || []), narrationData.narration]}));
-        } else { 
-            setError("No text available to narrate.");
-        }
+      } else if (newMode === 'audio') {
+         setDisplayedText('');
+         if (contentAndProgress.audioNarrations && contentAndProgress.audioNarrations.length > 0) {
+            setAudioUrl(contentAndProgress.audioNarrations[0].url); // Use first available
+         } else {
+            toast.warn("No pre-generated audio. Manual or AI generation can be added via edit page or AI features.");
+            // Placeholder for future on-demand AI audio generation
+            // const textForAudio = displayedText || contentAndProgress.originalText;
+            // const narrationData = await generateAudioNarration(contentAndProgress._id, textForAudio);
+            // setAudioUrl(narrationData.narration.url);
+            // setContentAndProgress(prev => ({...prev, audioNarrations: [...(prev.audioNarrations || []), narrationData.narration]}));
+         }
       }
     } catch (err) {
-      console.error(`Failed to switch to ${mode} mode:`, err);
-      setError(err.response?.data?.error || `Failed to generate ${mode} content.`);
+      const errorMsg = err.response?.data?.error || `Failed to generate ${newMode} content.`;
+      setError(errorMsg); toast.error(errorMsg);
     } finally {
       setIsProcessingMode(false);
     }
-  }, [content, currentMode, userPrefs]);
+  }, [contentAndProgress, userPrefs, selectedSimplificationLevel, logInteraction]);
+
+  const handleQaSubmit = async (e) => {
+    e.preventDefault();
+    if (!qaQuestion.trim() || !contentAndProgress) return;
+    setQaLoading(true); setQaError(''); setQaAnswer('');
+    try {
+        const result = await askQuestionApi(qaQuestion, contentAndProgress.topic, contentAndProgress._id);
+        setQaAnswer(result.answer);
+    } catch (err) {
+        const errorMsg = err.response?.data?.error || "Failed to get an answer.";
+        setQaError(errorMsg);
+        toast.error(errorMsg);
+    } finally {
+        setQaLoading(false);
+        setQaQuestion(''); // Clear input after submission
+    }
+  };
+
 
   const getProseClass = () => userPrefs?.theme === 'high-contrast' ? 'prose-high-contrast' : '';
-
   const getButtonClass = (modeNameIsCurrent) => {
     let base = "px-3 py-1.5 rounded text-sm font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed ";
     if (modeNameIsCurrent) {
@@ -1201,150 +1602,131 @@ const ContentPage = () => {
     }
   };
 
-  const imageUrlsToDisplay = content?.media?.imageUrls || [];
-  
-  // --- Image Display Preferences ---
-  // For showImages: 'all', 'none' (or boolean 'showContentImages')
-  // For imageLayout: 'stacked', 'grid'
-  const showImagesPreference = userPrefs?.showContentImages !== undefined ? userPrefs.showContentImages : true; // Default to true if not set
-  // let showImages = showImagesOverride !== null ? showImagesOverride : showImagesPreference;
-  let showImages = showImagesPreference; // Simplified for now, without on-page override
+  const imageUrlsToDisplay = contentAndProgress?.media?.imageUrls || [];
+  const showImagesPreference = userPrefs?.showContentImages !== undefined ? userPrefs.showContentImages : true;
+  const imageLayoutPreference = userPrefs?.imageLayout || 'stacked';
 
-  const imageLayoutPreference = userPrefs?.imageLayout || 'stacked'; // Default to 'stacked'
-
-  if (loading) return <LoadingSpinner text={`Loading ${topic.replace(/-/g, ' ')}...`} />;
+  if (loading && !contentAndProgress) return <LoadingSpinner text={`Loading ${topicSlug.replace(/-/g, ' ')}...`} />;
 
   return (
     <div className="container mx-auto p-4 md:p-6">
       <div className="mb-4">
-        <Link to="/dashboard" className="text-sm">← Back to Dashboard</Link>
+        <Link to="/dashboard" className="text-sm text-[var(--color-link)] hover:underline">← Back to Dashboard</Link>
       </div>
 
-      {error && <ErrorMessage message={error} />}
-      {!content && !loading && !error && <InfoMessage message={`No content found for "${topic}".`} />}
+      {error && <ErrorMessageDisplay message={error} />}
+      {!contentAndProgress && !loading && !error && <InfoMessageDisplay message={`No content found for "${topicSlug}".`} />}
 
-      {content && (
-        <div className="space-y-8"> {/* Main content wrapper for spacing */}
-          <h1 className="capitalize">{content.topic.replace(/-/g, ' ')}</h1>
-          
-          {/* Main Content Area (Text, Mermaid, Audio) */}
-          <div className="mb-8"> {/* Spacing after main content before images */}
+      {contentAndProgress && (
+        <div className="space-y-8">
+          <h1 className="capitalize">{contentAndProgress.topic.replace(/-/g, ' ')}</h1>
+
+          <div className="mb-8">
             <div className="mb-6 border-b pb-3 flex flex-wrap gap-2 items-center border-[var(--color-border)]">
               {['original', 'simplified', 'visual', 'audio'].map((modeName) => (
                 <button
                   key={modeName}
                   onClick={() => handleModeChange(modeName)}
-                  disabled={isProcessingMode && currentMode !== modeName && modeName !== 'original'}
+                  disabled={isProcessingMode && currentMode !== modeName}
                   className={getButtonClass(currentMode === modeName)}
                 >
                   {isProcessingMode && currentMode === modeName ? `Loading...` : modeName.charAt(0).toUpperCase() + modeName.slice(1)}
                 </button>
               ))}
               {currentMode === 'simplified' && (
-                  <select
-                      value={userPrefs?.readingLevel === 'basic' ? 'easy' : (userPrefs?.readingLevel === 'advanced' ? 'advanced' : 'moderate')}
-                      onChange={(e) => handleModeChange('simplified', { level: e.target.value })}
-                      disabled={isProcessingMode}
-                      className="form-input-default ml-2 px-2 py-1.5 text-sm !w-auto"
-                  >
-                      <option value="easy">Easy</option>
-                      <option value="moderate">Moderate</option>
-                      <option value="advanced">Advanced</option>
-                  </select>
+                <select
+                  value={selectedSimplificationLevel}
+                  onChange={(e) => handleModeChange('simplified', { level: e.target.value })}
+                  disabled={isProcessingMode}
+                  className="form-input-default ml-2 px-2 py-1.5 text-sm !w-auto"
+                  aria-label="Select simplification level"
+                >
+                  {SIMPLIFICATION_LEVELS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
               )}
             </div>
 
             <article
-              className={`prose prose-sm sm:prose lg:prose-lg xl:prose-xl max-w-none 
-                          p-4 md:p-6 border rounded shadow-sm 
+              className={`prose prose-sm sm:prose lg:prose-lg xl:prose-xl max-w-none
+                          p-4 md:p-6 border rounded shadow-sm
                           bg-[var(--color-card-background)] border-[var(--color-border)]
                           dark:prose-invert ${getProseClass()}`}
             >
               {(currentMode === 'original' || currentMode === 'simplified') && (
                    isProcessingMode && !displayedText ? <LoadingSpinner text={currentMode === 'original' ? 'Loading...' : 'Simplifying...'} /> :
-                   displayedText ? <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n/g, '<br />') }} /> :
-                   !isProcessingMode && <InfoMessage message="No text content available." />
+                   displayedText ? <div dangerouslySetInnerHTML={{ __html: displayedText.replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br />') }} /> : // Basic paragraph/br handling
+                   !isProcessingMode && <InfoMessageDisplay message="No text content available for this mode." />
               )}
               {currentMode === 'visual' && (
                    isProcessingMode && !visualMapData ? <LoadingSpinner text="Generating visual map..." /> :
                    visualMapData && visualMapData.data && visualMapData.format === 'mermaid' ? (
-                       <MermaidDiagram chartData={visualMapData.data} diagramId={`content-map-${content._id}-${Date.now()}`} />
+                       <MermaidDiagram chartData={visualMapData.data} diagramId={`content-map-${contentAndProgress._id}-${Date.now()}`} />
                    ) :
                    visualMapData && visualMapData.data && visualMapData.format !== 'mermaid' ? (
                         <pre className="whitespace-pre-wrap break-words">{visualMapData.data}</pre>
                    ) :
-                   !isProcessingMode && <InfoMessage message="No visual map available or format not supported." />
+                   !isProcessingMode && <InfoMessageDisplay message="No visual map available or format not supported." />
               )}
               {currentMode === 'audio' && (
-                   isProcessingMode && !audioUrl ? <LoadingSpinner text="Generating audio..." /> :
+                   isProcessingMode && !audioUrl ? <LoadingSpinner text="Loading audio..." /> :
                    audioUrl ? <audio controls src={audioUrl} className="w-full my-2 body-theme-high-contrast:[color-scheme:dark]">Your browser does not support audio.</audio> :
-                   !isProcessingMode && <InfoMessage message="No audio available." />
+                   !isProcessingMode && <InfoMessageDisplay message="No audio available for this content." />
               )}
             </article>
           </div>
-          {/* End Main Content Area */}
 
-
-          {/* --- IMAGE DISPLAY SECTION --- */}
-          {showImages && imageUrlsToDisplay && imageUrlsToDisplay.length > 0 && (
+          {showImagesPreference && imageUrlsToDisplay && imageUrlsToDisplay.length > 0 && (
             <section className="my-8 py-6 border-t border-b border-[var(--color-border)]" aria-labelledby="illustrations-heading">
               <h2 id="illustrations-heading" className="text-xl font-semibold mb-6 text-center text-[var(--color-text-secondary)]">
                 Illustrations / Visual Aids
               </h2>
-              
-              <div 
-                className={`
-                  ${imageLayoutPreference === 'grid' ? 
-                    'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6' : 
-                    'space-y-6 max-w-2xl mx-auto' // Stacked layout
-                  }
-                `}
-              >
+              <div className={`${imageLayoutPreference === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6' : 'space-y-6 max-w-2xl mx-auto'}`}>
                 {imageUrlsToDisplay.map((url, index) => (
                   url && typeof url === 'string' && url.trim() !== '' ? (
-                    <figure 
-                        key={`content-image-${index}-${url}`} 
-                        className="bg-[var(--color-card-background)] rounded-lg overflow-hidden shadow-lg border border-[var(--color-border)] group" // group for hover effect
-                    >
-                      <img
-                        src={url}
-                        alt={`${content.topic.replace(/-/g, ' ')} illustration ${index + 1}`}
-                        className={`w-full block mx-auto transition-transform duration-300 group-hover:scale-105
-                          ${imageLayoutPreference === 'grid' ? 
-                            'h-full object-cover aspect-[16/10]' : // For grid, cover and aspect ratio
-                            'h-auto max-h-[60vh] object-contain' // For stacked, contain and max height
-                          } 
-                        `}
-                        loading="lazy"
-                        onError={(e) => {
-                          console.warn(`Error loading image: ${url}`);
-                          e.target.style.display = 'none';
-                          if(e.target.parentElement) {
-                            const errorP = document.createElement('p');
-                            errorP.className = 'text-xs text-red-500 p-4 text-center';
-                            errorP.textContent = 'Image failed to load';
-                            e.target.parentElement.appendChild(errorP);
-                          }
-                        }}
-                      />
-                      {/* Example for caption if you add caption data to your content model */}
-                      {/* {content.media.imageCaptions && content.media.imageCaptions[index] && (
-                        <figcaption className="p-3 text-sm text-center text-[var(--color-text-secondary)] bg-[var(--color-background)] border-t border-[var(--color-border)]">
-                          {content.media.imageCaptions[index]}
-                        </figcaption>
-                      )} */}
+                    <figure key={`content-image-${index}-${url.slice(-10)}`} className="bg-[var(--color-card-background)] rounded-lg overflow-hidden shadow-lg border border-[var(--color-border)] group">
+                      <img src={url} alt={`${contentAndProgress.topic.replace(/-/g, ' ')} illustration ${index + 1}`}
+                           className={`w-full block mx-auto transition-transform duration-300 group-hover:scale-105
+                                       ${imageLayoutPreference === 'grid' ? 'h-full object-cover aspect-[16/10]' : 'h-auto max-h-[60vh] object-contain'}`}
+                           loading="lazy"
+                           onError={(e) => { e.target.style.display = 'none'; if(e.target.parentElement) { const errP = document.createElement('p'); errP.className = 'text-xs text-red-500 p-4 text-center'; errP.textContent = 'Image failed to load'; e.target.parentElement.appendChild(errP); }}} />
                     </figure>
                   ) : null
                 ))}
               </div>
             </section>
           )}
-          {/* --- END IMAGE DISPLAY SECTION --- */}
 
-          <div className="mt-8 card">
-            <h3 className="text-xl font-semibold mb-3">Interactive Companion</h3>
-            <p className="text-[var(--color-text-secondary)]">Ask questions and get personalized help related to this topic (Coming Soon).</p>
-          </div>
+          {isAuthenticated && (
+            <div className="mt-10 card">
+                <h3 className="text-xl font-semibold mb-4">Interactive Companion (AI Tutor)</h3>
+                <form onSubmit={handleQaSubmit} className="space-y-3">
+                    <div>
+                        <label htmlFor="qa-question" className="form-label-default">Ask a question about "{contentAndProgress.topic.replace(/-/g, ' ')}":</label>
+                        <textarea
+                            id="qa-question"
+                            rows="3"
+                            className="form-input-default"
+                            value={qaQuestion}
+                            onChange={(e) => setQaQuestion(e.target.value)}
+                            placeholder="e.g., Can you explain this concept in simpler terms?"
+                            required
+                        />
+                    </div>
+                    <button type="submit" className="button-primary" disabled={qaLoading || !qaQuestion.trim()}>
+                        {qaLoading ? "Thinking..." : "Ask AI Tutor"}
+                    </button>
+                </form>
+                {qaError && <ErrorMessageDisplay message={qaError} />}
+                {qaAnswer && !qaError && (
+                    <div className="mt-6 p-4 border border-[var(--color-border)] rounded-md bg-[var(--color-background)] shadow">
+                        <h4 className="font-semibold text-[var(--color-text-primary)] mb-2">AI Tutor's Response:</h4>
+                        <div className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: qaAnswer.replace(/\n/g, '<br />') }}></div>
+                    </div>
+                )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1354,19 +1736,25 @@ const ContentPage = () => {
 export default ContentPage;
 
 ===== File: /src/pages/DashboardPage.jsx =====
-// src/pages/DashboardPage.jsx
+// ===== File: /src/pages/DashboardPage.jsx =====
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
 import { getPublishedContentList } from '../services/contentService';
+import { getRecentLearningActivityApi } from '../services/taskService';
 
-const LoadingSpinner = ({text = "Loading topics..."}) => (
+// Import new components
+import UserTasks from '../components/dashboard/UserTasks';
+import ContinueLearning from '../components/dashboard/ContinueLearning';
+import PredictiveSuggestions from '../components/dashboard/PredictiveSuggestions';
+
+const LoadingSpinner = ({text = "Loading..."}) => (
   <div className="text-center p-10">
     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[var(--color-link)] mx-auto mb-2"></div>
     <p className="text-[var(--color-text-secondary)]">{text}</p>
   </div>
 );
-const ErrorMessage = ({ message }) => (
+const ErrorMessageDisplay = ({ message }) => ( // Renamed
   <div className="text-center p-4 my-4 text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-300 rounded border border-red-300">
     Error: {message}
   </div>
@@ -1376,27 +1764,53 @@ const ErrorMessage = ({ message }) => (
 const DashboardPage = () => {
   const { user } = useAuth();
   const [allTopics, setAllTopics] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [loadingTopics, setLoadingTopics] = useState(true);
+  const [topicError, setTopicError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [loadingRecent, setLoadingRecent] = useState(true);
+  const [recentError, setRecentError] = useState(null);
+
   const fetchTopics = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    setLoadingTopics(true);
+    setTopicError(null);
     try {
-      const data = await getPublishedContentList({ limit: 200, sortBy: 'topic:asc' }); // Fetch a large number for client-side filtering
+      // Fetch more topics for better client-side filtering if needed, or implement backend pagination for this list too.
+      const data = await getPublishedContentList({ limit: 100, sortBy: 'topic:asc' });
       setAllTopics(data.contents || []);
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to load topics.');
+      setTopicError(err.response?.data?.error || 'Failed to load topics.');
       console.error("Dashboard fetch topics error:", err);
     } finally {
-      setLoading(false);
+      setLoadingTopics(false);
     }
   }, []);
 
+  const fetchRecentActivity = useCallback(async () => {
+    if (!user) {
+        setLoadingRecent(false); // No user, nothing to fetch
+        return;
+    }
+    setLoadingRecent(true);
+    setRecentError(null);
+    try {
+      const data = await getRecentLearningActivityApi(5); // Get top 5 recent activities
+      setRecentActivity(data || []);
+    } catch (err) {
+      setRecentError(err.response?.data?.error || 'Failed to load recent activity.');
+      console.error("Dashboard fetch recent activity error:", err);
+    } finally {
+      setLoadingRecent(false);
+    }
+  }, [user]);
+
   useEffect(() => {
     fetchTopics();
-  }, [fetchTopics]);
+    if(user) { // Only fetch recent activity if user is logged in
+        fetchRecentActivity();
+    }
+  }, [fetchTopics, fetchRecentActivity, user]);
 
   const filteredTopics = useMemo(() => {
     if (!searchTerm.trim()) return allTopics;
@@ -1404,7 +1818,7 @@ const DashboardPage = () => {
     return allTopics.filter(content =>
       content.topic.toLowerCase().replace(/-/g, ' ').includes(lowerSearchTerm) ||
       (content.tags && content.tags.some(tag => tag.toLowerCase().includes(lowerSearchTerm))) ||
-      (content.originalText && content.originalText.toLowerCase().substring(0, 300).includes(lowerSearchTerm))
+      (content.originalText && content.originalText.toLowerCase().substring(0, 200).includes(lowerSearchTerm)) // Search smaller snippet
     );
   }, [allTopics, searchTerm]);
 
@@ -1413,12 +1827,26 @@ const DashboardPage = () => {
       <div>
         <h1>Dashboard</h1>
         <p className="text-lg text-[var(--color-text-secondary)]">
-          Welcome back, {user?.name || user?.email}!
+          Welcome back, {user?.name || user?.email?.split('@')[0]}!
         </p>
       </div>
 
+      {user && ( // Only show these sections if user is logged in
+        <div className="grid md:grid-cols-2 gap-6">
+            <ContinueLearning
+                activities={recentActivity}
+                loading={loadingRecent}
+                error={recentError}
+            />
+            <PredictiveSuggestions userPreferences={user?.preferences} recentActivity={recentActivity} allTopics={allTopics} />
+        </div>
+      )}
+
+      {user && <UserTasks />}
+
+
       <div className="card">
-        <h2 className="text-xl font-semibold mb-4">Explore Topics:</h2>
+        <h2 className="text-xl font-semibold mb-4">Explore All Topics:</h2>
         <div className="mb-6">
           <input
             type="search"
@@ -1430,22 +1858,22 @@ const DashboardPage = () => {
           />
         </div>
 
-        {loading && <LoadingSpinner />}
-        {error && <ErrorMessage message={error} />}
-        
-        {!loading && !error && allTopics.length === 0 && (
+        {loadingTopics && <LoadingSpinner text="Loading topics..." />}
+        {topicError && <ErrorMessageDisplay message={topicError} />}
+
+        {!loadingTopics && !topicError && allTopics.length === 0 && (
             <p className="text-[var(--color-text-secondary)] text-center py-4">No topics available yet. Content creators can add more!</p>
         )}
-        {!loading && !error && allTopics.length > 0 && filteredTopics.length === 0 && searchTerm.trim() && (
+        {!loadingTopics && !topicError && allTopics.length > 0 && filteredTopics.length === 0 && searchTerm.trim() && (
             <p className="text-[var(--color-text-secondary)] text-center py-4">No topics match your search: "{searchTerm}". Try a different keyword.</p>
         )}
 
-        {!loading && !error && filteredTopics.length > 0 && (
-          <ul className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar"> {/* Added max-height and scroll */}
+        {!loadingTopics && !topicError && filteredTopics.length > 0 && (
+          <ul className="space-y-3 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
             {filteredTopics.map(content => (
               <li key={content._id || content.topic}>
                 <Link
-                  to={`/content/${content.topic}`} 
+                  to={`/content/${content.topic}`}
                   className="block p-3 rounded-md hover:bg-primary/10 dark:hover:bg-primary-light/10 body-theme-high-contrast:hover:bg-hc-link body-theme-high-contrast:hover:text-hc-background transition-colors duration-150 border border-transparent hover:border-[var(--color-border)]"
                 >
                   <span className="font-medium text-base capitalize">
@@ -1481,7 +1909,7 @@ const DashboardPage = () => {
                 Go to Profile Settings
             </Link>
         </div>
-         <div className="card">
+         <div className="card opacity-70"> {/* Placeholder for now */}
             <h3 className="text-lg font-semibold mb-3">Learning Goals (Coming Soon)</h3>
             <p className="text-sm text-[var(--color-text-secondary)]">
                 Track your progress and set new learning objectives.
@@ -2946,32 +3374,37 @@ export const updateUserPreferences = async (preferencesData) => {
 };
 
 ===== File: /src/services/contentService.js =====
-// src/services/contentService.js
+// ===== File: /src/services/contentService.js =====
 import api from './api';
 
-export const getContentByTopic = async (topic) => {
-  const response = await api.get(`/content/topic/${topic}`);
+export const getContentByTopic = async (topicSlug) => {
+  const response = await api.get(`/content/topic/${topicSlug}`);
+  // response.data will now include `learningProgress` if user is logged in
   return response.data;
 };
 
-export const simplifyContent = async (topic, level = 'easy') => {
-  const response = await api.post(`/content/simplify`, { topic, level });
+// `level` can now be 'eli5', 'easy', 'high_school', 'college_intro', etc.
+export const simplifyContent = async (topicSlug, level = 'easy') => {
+  const response = await api.post(`/content/simplify`, { topic: topicSlug, level });
+  // response.data will include { simplifiedText, level, topicId }
   return response.data;
 };
 
-export const generateVisualMap = async (topic, format = 'mermaid') => {
-  const response = await api.post(`/content/visual-map`, { topic, format });
+export const generateVisualMap = async (topicSlug, format = 'mermaid') => {
+  const response = await api.post(`/content/visual-map`, { topic: topicSlug, format });
+  // response.data will include { visualMap, topicId }
   return response.data;
 };
 
 export const generateAudioNarration = async (contentId, textToNarrate) => {
   const response = await api.post(`/content/generate-audio`, { contentId, textToNarrate });
+  // response.data will include { message, narration, topicId }
   return response.data;
 };
 
 export const findVideoExplainers = async (contentId, query) => {
   const response = await api.post(`/content/find-videos`, { contentId, query });
-  return response.data;
+  return response.data; // This is currently a 501 not implemented
 };
 
 export const getPublishedContentList = async (params = {}) => {
@@ -2981,28 +3414,90 @@ export const getPublishedContentList = async (params = {}) => {
       cleanParams[key] = params[key];
     }
   }
-  const response = await api.get('/content', { params: cleanParams }); 
-  return response.data; 
+  const response = await api.get('/content', { params: cleanParams });
+  return response.data;
 };
 
 export const getContentByIdForEditing = async (contentId) => {
-  const response = await api.get(`/content/${contentId}`); 
+  const response = await api.get(`/content/${contentId}`);
   return response.data;
 };
 
 export const createContent = async (contentData) => {
+  // contentData might now include learningObjectives, keyVocabulary
   const response = await api.post('/content/create', contentData);
-  return response.data; // Ensure this returns the created content object with _id
+  return response.data;
 };
 
 export const updateContent = async (contentId, contentData) => {
+  // contentData might now include learningObjectives, keyVocabulary
   const response = await api.put(`/content/${contentId}`, contentData);
-  return response.data; // Ensure this returns the updated content object
+  return response.data;
 };
 
 export const deleteContent = async (contentId) => {
   const response = await api.delete(`/content/${contentId}`);
   return response.data;
+};
+
+===== File: /src/services/qaService.js =====
+// ===== File: /src/services/qaService.js =====
+import api from './api';
+
+export const askQuestionApi = async (question, topic, contentId = null) => {
+  const payload = { question, topic };
+  if (contentId) {
+    payload.contentId = contentId;
+  }
+  const response = await api.post('/qa/ask', payload);
+  return response.data; // { answer }
+};
+
+===== File: /src/services/taskService.js =====
+// ===== File: /src/services/taskService.js =====
+import api from './api';
+
+// Task Management
+export const createTaskApi = async (taskData) => {
+  const response = await api.post('/tasks', taskData);
+  return response.data;
+};
+
+export const getUserTasksApi = async (filters = {}) => {
+  const response = await api.get('/tasks', { params: filters });
+  return response.data;
+};
+
+export const getTaskByIdApi = async (taskId) => {
+  const response = await api.get(`/tasks/${taskId}`);
+  return response.data;
+};
+
+export const updateTaskApi = async (taskId, taskData) => {
+  const response = await api.put(`/tasks/${taskId}`, taskData);
+  return response.data;
+};
+
+export const deleteTaskApi = async (taskId) => {
+  const response = await api.delete(`/tasks/${taskId}`);
+  return response.data;
+};
+
+// Learning Progress
+export const getLearningProgressForContentApi = async (contentId) => {
+    const response = await api.get(`/tasks/progress/content/${contentId}`); // Path matches backend
+    return response.data;
+};
+
+export const getRecentLearningActivityApi = async (limit = 5) => {
+    const response = await api.get(`/tasks/progress/recent`, { params: { limit } });
+    return response.data;
+};
+
+export const logContentInteractionApi = async (interactionData) => {
+    // interactionData = { contentId, mode, eventType: 'start'/'end', durationMs (if end) }
+    const response = await api.post(`/tasks/progress/log-interaction`, interactionData);
+    return response.data;
 };
 
 ===== File: /src/services/userService.js =====
